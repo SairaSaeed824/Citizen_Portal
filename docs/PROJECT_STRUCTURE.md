@@ -5,69 +5,48 @@
 ```text
 Citizen_Portal/
 │
-├── frontend/                              # React.js SPA Application
-│   ├── public/                            # Static assets, favicon, localization JSONs
-│   │   ├── locales/                       # Bilingual translation bundles
-│   │   │   ├── en/translation.json        # English translation dictionary
-│   │   │   └── ur/translation.json        # Urdu translation dictionary (Nastaliq support)
-│   │   └── favicon.ico                    # Web favicon
-│   │
+├── frontend/                              # Vite + React.js Client
+│   ├── public/                            # Static assets, favicon, emblems
 │   ├── src/                               # Frontend source root
-│   │   ├── assets/                        # Local images, SVG illustrations, logos
-│   │   ├── components/                    # Modular UI components
-│   │   │   ├── common/                    # Reusable primitives (Buttons, Inputs, Badges)
-│   │   │   │   ├── Navbar.jsx             # Top navigation with language & theme toggle
-│   │   │   │   ├── Footer.jsx             # Global footer with disclaimers and links
-│   │   │   │   ├── Card.jsx               # Opportunity card preview with deadline badge
-│   │   │   │   ├── Pagination.jsx         # Accessible pagination control
-│   │   │   │   └── SearchBar.jsx          # Debounced instant search input
-│   │   │   ├── filters/                   # Filter panel & drawer components
-│   │   │   │   ├── FilterSidebar.jsx      # Desktop multi-facet filter bar
-│   │   │   │   └── MobileFilterDrawer.jsx # Slide-out touch filter sheet
-│   │   │   ├── ai/                        # AI Assistant & Tool widgets
-│   │   │   │   ├── ChatbotDrawer.jsx      # Floating conversational assistant
-│   │   │   │   └── EligibilityModal.jsx   # Interactive qualification questionnaire
-│   │   │   └── admin/                     # Admin dashboard components
-│   │   │       ├── OpportunityForm.jsx    # Add/Edit Opportunity form with validation
-│   │   │       ├── LogViewerTable.jsx     # Scraper execution audit log grid
-│   │   │       └── ScraperControlCard.jsx # On-demand scraper trigger card
+│   │   ├── components/                    # UI Components
+│   │   │   ├── Navbar.jsx                 # Top bar with Urdu, Dark mode & Admin triggers
+│   │   │   ├── Footer.jsx                 # Matching green minimal legal footer
+│   │   │   ├── HeroSection.jsx            # Animated floating orbs, glow search bar
+│   │   │   ├── CivicStatsDashboard.jsx    # Real-time counter metrics
+│   │   │   ├── CategoryNav.jsx            # Jobs, Scholarships, Loans, Training, Internships
+│   │   │   ├── OpportunityCard.jsx        # Category colored cards with flame urgency badges
+│   │   │   ├── SmallBanners.jsx           # Flagship initiative banners with zoom effects
+│   │   │   ├── OpportunityDetailModal.jsx # WhatsApp share, countdown timers, detail modal
+│   │   │   └── DisclaimerBanner.jsx       # Non-governmental transparency notice
 │   │   │
-│   │   ├── pages/                         # Route-level views
-│   │   │   ├── HomePage.jsx               # Hero banner, category highlights & search
-│   │   │   ├── OpportunityListPage.jsx    # Paginated opportunity grid with sidebar
-│   │   │   ├── OpportunityDetailPage.jsx  # Full details, eligibility, and Apply Now CTA
-│   │   │   ├── FavoritesPage.jsx          # Saved bookmarks with countdown indicators
-│   │   │   ├── EligibilityCalculator.jsx  # Dedicated multi-step eligibility wizard
-│   │   │   ├── AdminLoginPage.jsx         # Administrative login form
-│   │   │   ├── AdminDashboardPage.jsx     # Stats, CRUD tables, and scraper monitors
-│   │   │   └── NotFoundPage.jsx           # Custom 404 page
+│   │   ├── screens/                       # Main Views
+│   │   │   ├── HomeScreen.jsx             # Search, category navigation & listing cards
+│   │   │   ├── GuideScreen.jsx            # Interactive data flow simulator & 5-step journey
+│   │   │   ├── ChatbotScreen.jsx          # Madadgar AI Assistant with wave typing indicator
+│   │   │   ├── SubmitOpportunityScreen.jsx# Crowdsource submission form with character count
+│   │   │   └── AdminScreen.jsx            # Executive Control Deck & scraper monitors
 │   │   │
-│   │   ├── redux/                         # Centralized State Management (RTK)
-│   │   │   ├── store.js                   # Configured Redux store
-│   │   │   └── slices/                    # Modular state slices
-│   │   │       ├── authSlice.js           # Admin auth token & session state
-│   │   │       ├── opportunitySlice.js    # Filtered opportunities & pagination state
-│   │   │       ├── filterSlice.js         # Active category, province, and search query
-│   │   │       ├── favoriteSlice.js       # Bookmarked opportunity IDs & sync
-│   │   │       └── uiSlice.js             # Language toggle, theme, drawer states
+│   │   ├── services/                      # Single Data Service Layer
+│   │   │   └── opportunitiesService.js    # Ingest, query, filter, chatbot and submission APIs
 │   │   │
-│   │   ├── services/                      # HTTP API Integration Layer
-│   │   │   ├── api.js                     # Configured Axios instance with interceptors
-│   │   │   ├── authService.js             # Login & token refresh API calls
-│   │   │   ├── opportunityService.js      # Public opportunity fetching & searching
-│   │   │   ├── aiService.js               # Chatbot & eligibility calculator API calls
-│   │   │   └── adminService.js            # CRUD & scraper trigger endpoints
+│   │   ├── i18n/                          # Bilingual Localization
+│   │   │   └── translations.js            # English & Urdu translation dictionary
 │   │   │
-│   │   ├── utils/                         # Helper functions & formatters
-│   │   │   ├── dateFormatter.js           # Date and deadline countdown utilities
-│   │   │   ├── constants.js               # Category metadata, province lists
-│   │   │   └── i18n.js                    # i18next configuration & initialization
-│   │   │
-│   │   ├── App.jsx                        # Main router and route definitions
-│   │   ├── main.jsx                       # React DOM entry point with Redux Provider
-│   │   └── index.css                      # Tailwind base, components, and custom CSS
+│   │   ├── App.jsx                        # State router and screen controller
+│   │   ├── main.jsx                       # React DOM entry point
+│   │   └── index.css                      # Tailwind v4, custom keyframes, Dark Mode tokens
 │   │
-│   ├── .env.example                       # Frontend environment template
+│   ├── package.json                       # Dependencies (React, Lucide, Tailwind v4)
+│   └── vite.config.js                     # Vite build configuration
+│
+├── backend/                               # FastAPI / Python Scraper Services
+│   ├── app/
+│   │   ├── scrapers/                      # Python automated scrapers (HEC, NJP, NAVTTC, SMEDA)
+│   │   └── main.py                        # FastAPI endpoints and database connectors
+│   └── requirements.txt                   # Python dependencies (FastAPI, BeautifulSoup, Selenium)
+│
+└── docs/                                  # Project Architecture & Guidelines
+```
 │   ├── index.html                         # HTML template
 │   ├── package.json                       # Dependencies & build scripts
 │   ├── postcss.config.js                  # PostCSS plugins

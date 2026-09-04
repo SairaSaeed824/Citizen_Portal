@@ -13,7 +13,10 @@ import {
   Check, 
   ShieldCheck, 
   AlertCircle,
-  FileText
+  FileText,
+  MessageCircle,
+  Calendar,
+  Flame
 } from 'lucide-react';
 
 const categoryIcons = {
@@ -53,12 +56,33 @@ export default function OpportunityDetailModal({
     ([key]) => !standardKeys.has(key)
   );
 
+  // Calculate days remaining
+  let daysRemaining = null;
+  let isClosingSoon = false;
+  if (closing_date) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const deadline = new Date(closing_date);
+    deadline.setHours(0, 0, 0, 0);
+    const diffTime = deadline - today;
+    daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    if (daysRemaining >= 0 && daysRemaining <= 7) {
+      isClosingSoon = true;
+    }
+  }
+
   const handleShare = () => {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(window.location.href);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
+  };
+
+  const handleWhatsAppShare = () => {
+    const shareText = `*${title}*\n🏛 Organization: ${organization}\n📍 Province: ${province}\n📅 Deadline: ${closing_date || 'Open'}\n🔗 Apply Link: ${apply_link}\n\n_Shared via Citizen Opportunities Portal_`;
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`;
+    window.open(url, '_blank');
   };
 
   const formatFieldValue = (val) => {
@@ -85,11 +109,14 @@ export default function OpportunityDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/75 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-950/80 backdrop-blur-md overflow-y-auto animate-fade-in-up"
+      onClick={onClose}
+    >
       
-      {/* Modal Container */}
+      {/* Modal Container with Spring Animation */}
       <div 
-        className="bg-white dark:bg-slate-900 w-full max-w-3xl rounded-3xl shadow-2xl border border-emerald-100 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] my-auto relative animate-in zoom-in-95 duration-200 transition-colors"
+        className="bg-white dark:bg-slate-900 w-full max-w-3xl rounded-3xl shadow-2xl border border-emerald-100 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh] my-auto relative animate-spring-in transition-colors"
         onClick={(e) => e.stopPropagation()}
       >
         
@@ -98,7 +125,7 @@ export default function OpportunityDetailModal({
           <button
             type="button"
             onClick={onClose}
-            className="absolute top-4 right-4 p-1.5 rounded-full bg-black/20 hover:bg-black/40 text-white transition cursor-pointer"
+            className="absolute top-4 right-4 p-2 rounded-full bg-black/25 hover:bg-black/50 text-white transition cursor-pointer active:scale-95"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -114,9 +141,16 @@ export default function OpportunityDetailModal({
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
               <span>{t.verifiedGovt}</span>
             </span>
+
+            {isClosingSoon && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-rose-500/30 text-rose-200 border border-rose-400/40 animate-pulse">
+                <Flame className="w-3.5 h-3.5 text-rose-400" />
+                <span>{daysRemaining === 0 ? 'Ends Today!' : `${daysRemaining} Days Left`}</span>
+              </span>
+            )}
           </div>
 
-          <h3 className={`text-xl sm:text-2xl font-bold text-white leading-snug mb-2 ${isUrdu ? 'urdu-text' : ''}`}>
+          <h3 className={`text-xl sm:text-2xl font-extrabold text-white leading-snug mb-2.5 ${isUrdu ? 'urdu-text' : ''}`}>
             {title}
           </h3>
 
@@ -143,7 +177,7 @@ export default function OpportunityDetailModal({
               <FileText className="w-4 h-4 text-[#00401A] dark:text-emerald-400" />
               <span>{t.aboutProgram}</span>
             </h4>
-            <div className={`bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 text-slate-700 dark:text-slate-300 leading-relaxed text-xs sm:text-sm ${isUrdu ? 'urdu-text' : ''}`}>
+            <div className={`bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 text-slate-700 dark:text-slate-300 leading-relaxed text-xs sm:text-sm ${isUrdu ? 'urdu-text' : ''}`}>
               {description}
             </div>
           </div>
@@ -160,7 +194,7 @@ export default function OpportunityDetailModal({
                 {dynamicEntries.map(([key, value]) => (
                   <div 
                     key={key} 
-                    className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40 hover:border-emerald-300 dark:hover:border-emerald-600 transition shadow-2xs"
+                    className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/50 hover:border-emerald-300 dark:hover:border-emerald-600 transition shadow-2xs"
                   >
                     <span className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">
                       {getFieldFriendlyName(key)}
@@ -186,24 +220,35 @@ export default function OpportunityDetailModal({
         </div>
 
         {/* Modal Bottom Actions */}
-        <div className="bg-slate-50 dark:bg-slate-800/80 p-4 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="bg-slate-50 dark:bg-slate-800/90 p-4 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
           
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 transition cursor-pointer"
+              className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 transition cursor-pointer"
             >
               {t.backToDirectory}
             </button>
+
             <button
               type="button"
               onClick={handleShare}
-              className="px-3 py-2 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 transition flex items-center gap-1.5 cursor-pointer"
+              className="px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 transition flex items-center gap-1.5 cursor-pointer"
               title="Share Link"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
               <span>{copied ? t.linkCopied : t.shareOpportunity}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleWhatsAppShare}
+              className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/80 hover:bg-emerald-200 dark:hover:bg-emerald-900 border border-emerald-300 dark:border-emerald-800 transition flex items-center gap-1.5 cursor-pointer"
+              title="Share on WhatsApp"
+            >
+              <MessageCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>WhatsApp</span>
             </button>
           </div>
 
@@ -211,10 +256,10 @@ export default function OpportunityDetailModal({
             href={apply_link}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#00401A] hover:bg-[#055825] dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md transition transform active:scale-98 cursor-pointer"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-[#00401A] hover:bg-[#055825] dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md transition-all active:scale-95 btn-apply-glow cursor-pointer"
           >
             <span>{t.applyNow}</span>
-            <ExternalLink className="w-3.5 h-3.5" />
+            <ExternalLink className="w-4 h-4" />
           </a>
 
         </div>
@@ -224,3 +269,4 @@ export default function OpportunityDetailModal({
     </div>
   );
 }
+

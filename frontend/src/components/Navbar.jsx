@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { 
   Globe, 
   Menu, 
   X,
   Sun,
   Moon,
-  ShieldCheck
+  Compass,
+  Shield
 } from 'lucide-react';
 
 export default function Navbar({ 
@@ -30,6 +31,7 @@ export default function Navbar({
 
   const navItems = [
     { id: 'home', label: t.navHome },
+    { id: 'guide', label: t.navGuide || 'Guide & Flow' },
     { id: 'submit', label: t.navSubmit },
     { id: 'chatbot', label: t.navChatbot },
   ];
@@ -54,22 +56,34 @@ export default function Navbar({
           </div>
 
           <div className="flex items-center gap-3 text-xs">
-            {/* Dark / Light Mode Toggle */}
+            {/* Round Admin Login Icon Button */}
+            <button
+              onClick={() => setCurrentScreen('admin')}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/25 text-white border border-white/25 transition cursor-pointer text-[11px] font-bold shadow-xs active:scale-95 group"
+              title="Administrator Login"
+            >
+              <div className="w-4 h-4 rounded-full bg-emerald-400/30 flex items-center justify-center text-emerald-200 group-hover:bg-white group-hover:text-[#00401A] transition-colors">
+                <Shield className="w-2.5 h-2.5" />
+              </div>
+              <span>{t.adminLogin || 'Admin'}</span>
+            </button>
+
+            {/* Enhanced Dark / Light Mode Toggle Pill */}
             <button
               onClick={toggleTheme}
-              className="flex items-center gap-1 px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white border border-white/20 transition cursor-pointer font-medium"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/25 transition-all duration-200 cursor-pointer font-medium text-[11px] shadow-xs active:scale-95"
               title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
               aria-label="Toggle Theme"
             >
               {darkMode ? (
                 <>
-                  <Sun className="w-3.5 h-3.5 text-amber-300" />
-                  <span className="hidden sm:inline">Light</span>
+                  <Sun className="w-3.5 h-3.5 text-amber-300 animate-spin-slow" />
+                  <span className="font-bold">Light</span>
                 </>
               ) : (
                 <>
                   <Moon className="w-3.5 h-3.5 text-emerald-200" />
-                  <span className="hidden sm:inline">Dark</span>
+                  <span className="font-bold">Dark</span>
                 </>
               )}
             </button>
@@ -77,7 +91,7 @@ export default function Navbar({
             {/* Language Switcher */}
             <button 
               onClick={toggleLanguage}
-              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white border border-white/20 transition cursor-pointer font-medium"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/25 transition-all duration-200 cursor-pointer font-bold text-[11px] shadow-xs active:scale-95"
               title="Toggle Language"
             >
               <Globe className="w-3.5 h-3.5 text-emerald-300" />
@@ -96,9 +110,9 @@ export default function Navbar({
             onClick={() => handleNavClick('home')}
             className="flex items-center gap-3 cursor-pointer select-none group"
           >
-            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#00401A] to-[#046a38] p-0.5 shadow-md shadow-emerald-950/20 group-hover:scale-105 transition-transform duration-200 border-2 border-emerald-400/40 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#00401A] to-[#046a38] p-0.5 shadow-md shadow-emerald-950/20 group-hover:scale-105 transition-transform duration-200 border-2 border-emerald-400/40 flex items-center justify-center">
               <div className="w-full h-full rounded-full border border-white/40 flex items-center justify-center bg-[#00401A]">
-                <svg className="w-6 h-6 fill-white" viewBox="0 0 100 100">
+                <svg className="w-5 h-5 fill-white" viewBox="0 0 100 100">
                   <circle cx="50" cy="50" r="48" fill="#00401A" />
                   <path d="M64,26 A25,25 0 1,0 64,74 A20,20 0 1,1 64,26 Z" fill="#FFFFFF" />
                   <polygon points="65,35 68,46 79,46 70,53 74,64 65,57 56,64 59,53 51,46 62,46" fill="#FFFFFF" />
@@ -107,9 +121,12 @@ export default function Navbar({
             </div>
 
             <div>
-              <h1 className={`text-xl font-extrabold text-[#00401A] dark:text-emerald-400 tracking-tight leading-none transition ${isUrdu ? 'urdu-text' : ''}`}>
+              <h1 className={`text-lg sm:text-xl font-extrabold text-[#00401A] dark:text-emerald-400 tracking-tight leading-none transition ${isUrdu ? 'urdu-text' : ''}`}>
                 {t.portalTitle}
               </h1>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                {lang === 'ur' ? 'غیر سرکاری معلوماتی ایگریگیٹر' : 'Citizen Opportunities Gateway'}
+              </p>
             </div>
           </div>
 
@@ -121,9 +138,9 @@ export default function Navbar({
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
                     isActive
-                      ? 'bg-[#00401A] text-white dark:bg-emerald-600 shadow-xs'
+                      ? 'bg-[#00401A] text-white dark:bg-emerald-600 shadow-sm scale-100'
                       : 'text-slate-700 dark:text-slate-300 hover:text-[#00401A] dark:hover:text-emerald-300 hover:bg-emerald-50/70 dark:hover:bg-slate-800'
                   } ${isUrdu ? 'urdu-text' : ''}`}
                 >
@@ -168,13 +185,14 @@ export default function Navbar({
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-semibold transition ${
+                className={`w-full text-left px-4 py-2.5 rounded-lg text-sm font-semibold transition flex items-center justify-between ${
                   isActive
                     ? 'bg-[#00401A] text-white dark:bg-emerald-600'
                     : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                 } ${isUrdu ? 'urdu-text' : ''}`}
               >
                 <span>{item.label}</span>
+                {item.id === 'guide' && <Compass className="w-4 h-4 opacity-75" />}
               </button>
             );
           })}
