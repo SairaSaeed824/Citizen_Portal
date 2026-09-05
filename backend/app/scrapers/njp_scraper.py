@@ -1,269 +1,1068 @@
-import requests
+import os
+import sys
+import re
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Set
+from urllib.parse import urljoin, urlparse, parse_qs
+
 from bs4 import BeautifulSoup
-import json
-from datetime import datetime
-import logging
-from typing import List, Dict
-from urllib.parse import urljoin
-
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-logger = logging.getLogger(__name__)
 
 
-class NJPWebsiteScraper:
-    """Scrape job data from National Job Portal (NJP) website"""
-    
-    def __init__(self, output_file: str = 'njp_jobs.json'):
-        self.output_file = output_file
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
-    
-    def parse_job_cards(self, html_content: str, base_url: str) -> List[Dict]:
-        """Parse job cards from HTML"""
-        
-        soup = BeautifulSoup(html_content, 'html.parser')
-        jobs = []
-        
-        # Find all job cards using Tailwind class
-        card_wrappers = soup.find_all('div', class_='job-card')
-        logger.info(f"🔍 Found {len(card_wrappers)} job-card elements")
-        
-        for idx, card in enumerate(card_wrappers):
+# ============================================================
+# BACKEND PATH
+# ============================================================
+
+_BACKEND_DIR = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__)
+        )
+    )
+)
+
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+
+# ============================================================
+# IMPORT BASE SCRAPER
+# ============================================================
+
+try:
+    from app.scrapers.base import BaseScraper, logger
+except ImportError:
+    from app.scrapers.base import BaseScraper
+    import logging
+    logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# NJP SCRAPER
+# ============================================================
+
+class NJPScraper(BaseScraper):
+
+    def __init__(self):
+
+        super().__init__(
+            source_name="NJP",
+            base_url="https://www.njp.gov.pk",
+            delay_seconds=2.5
+        )
+
+        self.jobs_url = urljoin(
+            self.base_url,
+            "/jobs/live"
+        )
+
+    # ========================================================
+    # NORMALIZE DATE
+    # ========================================================
+
+    def _normalize_date(self, text: str) -> str:
+
+        if not text:
+            return ""
+
+        cleaned = " ".join(
+            text.strip().split()
+        )
+
+        match = re.search(
+            r"""
+            (
+                \d{4}[-/]\d{1,2}[-/]\d{1,2}
+                |
+                \d{1,2}[-/]\d{1,2}[-/]\d{4}
+                |
+                (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)
+                \s+\d{1,2},?\s+\d{4}
+                |
+                (?:January|February|March|April|May|June|July|August|September|October|November|December)
+                \s+\d{1,2},?\s+\d{4}
+                |
+                \d{1,2}\s+
+                (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)
+                ,?\s+\d{4}
+                |
+                \d{1,2}\s+
+                (?:January|February|March|April|May|June|July|August|September|October|November|December)
+                ,?\s+\d{4}
+            )
+            """,
+            cleaned,
+            flags=re.IGNORECASE | re.VERBOSE
+        )
+
+        if not match:
+            return ""
+
+        date_text = match.group(1).strip()
+
+        formats = [
+            "%b %d, %Y",
+            "%b %d %Y",
+            "%B %d, %Y",
+            "%B %d %Y",
+            "%d %b, %Y",
+            "%d %b %Y",
+            "%d %B, %Y",
+            "%d %B %Y",
+            "%d-%m-%Y",
+            "%d/%m/%Y",
+            "%Y-%m-%d",
+            "%Y/%m/%d",
+        ]
+
+        for date_format in formats:
+
             try:
-                job = self._extract_from_card(card, base_url, idx)
-                
-                if job and job.get('title'):
-                    jobs.append(job)
-                    logger.info(f"✅ Card {idx}: {job['title'][:60]}")
-                else:
-                    logger.debug(f"⚠️  Card {idx}: Incomplete data")
-                    
-            except Exception as e:
-                logger.error(f"❌ Error parsing card {idx}: {str(e)}")
-                continue
-        
-        logger.info(f"\n📊 Total jobs extracted: {len(jobs)}\n")
-        return jobs
-    
-    def _extract_from_card(self, card, base_url: str, idx: int = 0) -> Dict:
-        """Extract job data from card element"""
-        
-        job = {}
-        
-        # 1. TITLE: Extract from <h2> tag
-        logger.debug(f"Card {idx}: Extracting title...")
-        h2_elem = card.find('h2')
-        
-        if h2_elem:
-            title_text = h2_elem.get_text(strip=True)
-            if title_text and len(title_text) > 3:
-                job['title'] = title_text
-                logger.debug(f"  ✓ Title: {title_text[:60]}")
-        
-        # 2. ORGANIZATION/COMPANY: Extract from <p> tag (by Organization)
-        logger.debug(f"Card {idx}: Extracting organization...")
-        p_elem = card.find('p')
-        
-        if p_elem:
-            org_text = p_elem.get_text(strip=True)
-            # Remove "by " prefix if exists
-            org_text = org_text.replace('by ', '').strip()
-            if org_text:
-                job['organization'] = org_text
-                logger.debug(f"  ✓ Organization: {org_text}")
-        
-        # 3. EXTRACT JOB DETAILS from spans
-        logger.debug(f"Card {idx}: Extracting job details...")
-        span_tags = card.find_all('span')
-        
-        job_type = None
-        grade = None
-        vacancy = None
-        closing_date = None
-        experience = None
-        
-        for span in span_tags:
-            span_text = span.get_text(strip=True)
-            
-            # Job type (Contract, Permanent, etc.)
-            if span_text in ['Contract', 'Permanent', 'Temporary']:
-                job_type = span_text
-            
-            # Grade/Level (e.g., E-II, E-III)
-            elif span_text.startswith('E-'):
-                grade = span_text
-            
-            # Vacancies (number + "vacancy")
-            elif 'vacancy' in span_text.lower():
-                vacancy_match = span_text.split()[0]
-                if vacancy_match.isdigit():
-                    vacancy = int(vacancy_match)
-            
-            # Closing date (Expired On / Deadline)
-            elif 'expired on' in span_text.lower() or 'deadline' in span_text.lower():
-                closing_date = span_text
-            
-            # Experience
-            elif 'experience:' in span_text.lower():
-                # Get text after "Experience:"
-                parts = span_text.split('Experience:')
-                if len(parts) > 1:
-                    experience = parts[1].strip()
-        
-        if job_type:
-            job['job_type'] = job_type
-            logger.debug(f"  ✓ Job Type: {job_type}")
-        
-        if grade:
-            job['grade'] = grade
-            logger.debug(f"  ✓ Grade: {grade}")
-        
-        if vacancy:
-            job['vacancies'] = vacancy
-            logger.debug(f"  ✓ Vacancies: {vacancy}")
-        
-        if closing_date:
-            job['closing_date'] = closing_date
-            logger.debug(f"  ✓ Closing Date: {closing_date}")
-        
-        if experience:
-            job['experience'] = experience
-            logger.debug(f"  ✓ Experience: {experience}")
-        
-        # 4. APPLY LINK: Extract from first <a> tag with href
-        logger.debug(f"Card {idx}: Extracting link...")
-        a_tags = card.find_all('a')
-        
-        for a in a_tags:
-            href = a.get('href', '')
-            if href and '/jobs/' in href:
-                job['job_link'] = urljoin(base_url, href)
-                logger.debug(f"  ✓ Job Link: {href}")
-                break
-        
-        # 5. APPLY BUTTON LINK
-        apply_link = None
-        for a in a_tags:
-            a_text = a.get_text(strip=True)
-            href = a.get('href', '')
-            if 'apply' in a_text.lower() and href:
-                apply_link = urljoin(base_url, href)
-                logger.debug(f"  ✓ Apply Link: {href}")
-                break
-        
-        if apply_link:
-            job['apply_link'] = apply_link
-        
-        # Add metadata
-        job['source'] = 'National Job Portal (NJP)'
-        job['country'] = 'Pakistan'
-        job['website'] = 'https://www.njp.gov.pk'
-        job['scraped_at'] = datetime.now().isoformat()
-        
-        return job
-    
-    def parse_from_html_file(self, html_file: str) -> List[Dict]:
-        """Parse jobs from local HTML file"""
-        try:
-            logger.info(f"📂 Reading HTML file: {html_file}")
-            with open(html_file, 'r', encoding='utf-8') as f:
-                html_content = f.read()
-            
-            logger.info(f"✅ File read successfully. Size: {len(html_content)} bytes")
-            return self.parse_job_cards(html_content, 'https://www.njp.gov.pk')
-        except Exception as e:
-            logger.error(f"❌ Error reading HTML file: {str(e)}")
-            return []
-    
-    def enrich_job(self, job: Dict, index: int) -> Dict:
-        """Enrich job with ID"""
-        
-        enriched = {
-            'id': index,
-            'title': job.get('title'),
-            'organization': job.get('organization'),
-            'job_type': job.get('job_type'),
-            'grade': job.get('grade'),
-            'vacancies': job.get('vacancies'),
-            'experience': job.get('experience'),
-            'closing_date': job.get('closing_date'),
-            'job_link': job.get('job_link'),
-            'apply_link': job.get('apply_link'),
-            'country': job.get('country'),
-            'source': job.get('source'),
-            'website': job.get('website'),
-            'scraped_at': job.get('scraped_at')
-        }
-        
-        return {k: v for k, v in enriched.items() if v is not None}
-    
-    def save_to_json(self, jobs: List[Dict]) -> bool:
-        """Save jobs to JSON file"""
-        try:
-            output = {
-                'metadata': {
-                    'total_jobs': len(jobs),
-                    'last_updated': datetime.now().isoformat(),
-                    'source': 'National Job Portal (NJP)',
-                    'status': 'scraped'
-                },
-                'jobs': jobs
-            }
-            
-            with open(self.output_file, 'w', encoding='utf-8') as f:
-                json.dump(output, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"✅ Saved {len(jobs)} jobs to {self.output_file}")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Error saving JSON: {str(e)}")
-            return False
-    
-    def scrape_from_file(self, html_file: str) -> Dict:
-        """Scrape from local HTML file"""
-        
-        logger.info("🚀 Starting NJP file scraper...\n")
-        
-        jobs = self.parse_from_html_file(html_file)
-        
-        if not jobs:
-            logger.warning("⚠️  No jobs found in HTML file")
-            return {'status': 'no_data', 'count': 0}
-        
-        enriched_jobs = [self.enrich_job(j, i) for i, j in enumerate(jobs, 1)]
-        
-        if self.save_to_json(enriched_jobs):
-            return {
-                'status': 'success',
-                'count': len(enriched_jobs),
-                'file': self.output_file
-            }
-        else:
-            return {'status': 'failed'}
 
+                parsed_date = datetime.strptime(
+                    date_text,
+                    date_format
+                )
+
+                return parsed_date.strftime(
+                    "%Y-%m-%d"
+                )
+
+            except ValueError:
+                continue
+
+        return ""
+
+    # ========================================================
+    # EXTRACT CLOSING DATE
+    # ========================================================
+
+    def _extract_closing_date(self, card) -> str:
+
+        """
+        Handles NJP formats:
+
+        Available Till Sep 06, 2026
+        Available Until Sep 06, 2026
+        Expired On Aug 31, 2026
+        Deadline: Aug 31, 2026
+        Closing Date: Aug 31, 2026
+        Last Date: Aug 31, 2026
+        """
+
+        card_text = card.get_text(
+            " ",
+            strip=True
+        )
+
+        if not card_text:
+            return ""
+
+        patterns = [
+
+            r"available\s+till\s*:?\s*"
+            r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})",
+
+            r"available\s+until\s*:?\s*"
+            r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})",
+
+            r"expired\s+on\s*:?\s*"
+            r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})",
+
+            r"deadline\s*:?\s*"
+            r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})",
+
+            r"closing\s+date\s*:?\s*"
+            r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})",
+
+            r"last\s+date\s*:?\s*"
+            r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})",
+
+            r"(?:available\s+till|available\s+until|expired\s+on|deadline|closing\s+date|last\s+date)"
+            r"\s*:?\s*"
+            r"(\d{1,2}[/-]\d{1,2}[/-]\d{4})",
+
+            r"(?:available\s+till|available\s+until|expired\s+on|deadline|closing\s+date|last\s+date)"
+            r"\s*:?\s*"
+            r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})",
+        ]
+
+        # Search complete card
+        for pattern in patterns:
+
+            match = re.search(
+                pattern,
+                card_text,
+                flags=re.IGNORECASE
+            )
+
+            if match:
+
+                raw_date = match.group(1).strip()
+
+                normalized = self._normalize_date(
+                    raw_date
+                )
+
+                if normalized:
+                    return normalized
+
+        # Search individual spans
+        for span in card.find_all("span"):
+
+            text = span.get_text(
+                " ",
+                strip=True
+            )
+
+            if not text:
+                continue
+
+            lower_text = text.lower()
+
+            if any(
+                keyword in lower_text
+                for keyword in [
+                    "available till",
+                    "available until",
+                    "expired on",
+                    "deadline",
+                    "closing date",
+                    "last date"
+                ]
+            ):
+
+                normalized = self._normalize_date(
+                    text
+                )
+
+                if normalized:
+                    return normalized
+
+        # Final fallback
+        for element in card.find_all(
+            [
+                "span",
+                "div",
+                "p",
+                "small",
+                "label"
+            ]
+        ):
+
+            text = element.get_text(
+                " ",
+                strip=True
+            )
+
+            if not text:
+                continue
+
+            normalized = self._normalize_date(
+                text
+            )
+
+            if normalized:
+
+                lower_text = text.lower()
+
+                if any(
+                    keyword in lower_text
+                    for keyword in [
+                        "available till",
+                        "available until",
+                        "expired on",
+                        "deadline",
+                        "closing date",
+                        "last date"
+                    ]
+                ):
+                    return normalized
+
+        return ""
+
+    # ========================================================
+    # PARSE JOB CARDS
+    # ========================================================
+
+    def parse_job_cards(
+        self,
+        html_content: str
+    ) -> List[Dict[str, Any]]:
+
+        soup = BeautifulSoup(
+            html_content,
+            "html.parser"
+        )
+
+        jobs = []
+
+        cards = soup.find_all(
+            "div",
+            class_="job-card"
+        )
+
+        logger.info(
+            f"[NJP] Found {len(cards)} job-card elements"
+        )
+
+        for index, card in enumerate(cards):
+
+            job = self._extract_from_card(
+                card,
+                index
+            )
+
+            if job.get("title"):
+                jobs.append(job)
+
+        logger.info(
+            f"[NJP] Total extracted: {len(jobs)}"
+        )
+
+        dates_found = sum(
+            1
+            for job in jobs
+            if job.get("closing_date")
+        )
+
+        logger.info(
+            f"[NJP] Closing dates found: "
+            f"{dates_found}/{len(jobs)}"
+        )
+
+        return jobs
+
+    # ========================================================
+    # EXTRACT SINGLE JOB
+    # ========================================================
+
+    def _extract_from_card(
+        self,
+        card,
+        index: int
+    ) -> Dict[str, Any]:
+
+        job: Dict[str, Any] = {}
+
+        # ----------------------------------------------------
+        # TITLE
+        # ----------------------------------------------------
+
+        title_element = card.find("h2")
+
+        if title_element:
+
+            title = title_element.get_text(
+                " ",
+                strip=True
+            )
+
+            if title:
+                job["title"] = title
+
+        # ----------------------------------------------------
+        # ORGANIZATION
+        # ----------------------------------------------------
+
+        p_element = card.find("p")
+
+        if p_element:
+
+            organization = p_element.get_text(
+                " ",
+                strip=True
+            )
+
+            organization = re.sub(
+                r"^by\s+",
+                "",
+                organization,
+                flags=re.IGNORECASE
+            ).strip()
+
+            if organization:
+                job["organization"] = organization
+
+        # ----------------------------------------------------
+        # SPANS
+        # ----------------------------------------------------
+
+        for span in card.find_all("span"):
+
+            text = span.get_text(
+                " ",
+                strip=True
+            )
+
+            if not text:
+                continue
+
+            lower_text = text.lower()
+
+            # Job type
+            if text in [
+                "Contract",
+                "Permanent",
+                "Temporary",
+                "Internship"
+            ]:
+
+                job["job_type"] = text
+
+            # Grade
+            elif text.startswith("E-"):
+
+                job["grade"] = text
+
+            # Vacancies
+            elif "vacancy" in lower_text:
+
+                match = re.search(
+                    r"\d+",
+                    text
+                )
+
+                if match:
+
+                    job["vacancies"] = int(
+                        match.group()
+                    )
+
+            # Experience
+            elif "experience:" in lower_text:
+
+                parts = re.split(
+                    r"experience\s*:",
+                    text,
+                    flags=re.IGNORECASE
+                )
+
+                if len(parts) > 1:
+
+                    experience = parts[1].strip()
+
+                    if experience:
+                        job["experience"] = experience
+
+        # ----------------------------------------------------
+        # CLOSING DATE
+        # ----------------------------------------------------
+
+        closing_date = (
+            self._extract_closing_date(card)
+        )
+
+        if closing_date:
+
+            job["closing_date"] = closing_date
+
+            logger.info(
+                f"[NJP] Closing date found: "
+                f"{job.get('title', 'Unknown')} "
+                f"-> {closing_date}"
+            )
+
+        else:
+
+            logger.warning(
+                f"[NJP] Closing date NOT found: "
+                f"{job.get('title', 'Unknown')}"
+            )
+
+        # ----------------------------------------------------
+        # LINKS
+        # ----------------------------------------------------
+
+        for anchor in card.find_all("a"):
+
+            href = anchor.get(
+                "href",
+                ""
+            )
+
+            link_text = anchor.get_text(
+                " ",
+                strip=True
+            ).lower()
+
+            if not href:
+                continue
+
+            absolute_url = urljoin(
+                self.base_url,
+                href
+            )
+
+            # Job detail link
+            if "/jobs/" in href:
+
+                if "job_link" not in job:
+                    job["job_link"] = absolute_url
+
+            # Apply link
+            if "apply" in link_text:
+
+                job["apply_link"] = absolute_url
+
+        # ----------------------------------------------------
+        # SOURCE
+        # ----------------------------------------------------
+
+        job["source"] = (
+            "National Job Portal (NJP)"
+        )
+
+        # ----------------------------------------------------
+        # SCRAPED AT
+        # ----------------------------------------------------
+
+        job["scraped_at"] = (
+            datetime.now(
+                timezone.utc
+            ).isoformat()
+        )
+
+        return job
+
+    # ========================================================
+    # FIND NEXT PAGE
+    # ========================================================
+
+    def _find_next_page(
+        self,
+        html_content: str,
+        current_url: str
+    ) -> str:
+
+        soup = BeautifulSoup(
+            html_content,
+            "html.parser"
+        )
+
+        current_parsed = urlparse(
+            current_url
+        )
+
+        current_page = 1
+
+        try:
+
+            current_page = int(
+                parse_qs(
+                    current_parsed.query
+                ).get(
+                    "page",
+                    ["1"]
+                )[0]
+            )
+
+        except (
+            ValueError,
+            TypeError
+        ):
+
+            current_page = 1
+
+        # ----------------------------------------------------
+        # NEXT LINK
+        # ----------------------------------------------------
+
+        for link in soup.find_all("a"):
+
+            href = link.get(
+                "href",
+                ""
+            )
+
+            if not href:
+                continue
+
+            text = link.get_text(
+                " ",
+                strip=True
+            ).lower()
+
+            aria_label = (
+                link.get(
+                    "aria-label",
+                    ""
+                )
+                .strip()
+                .lower()
+            )
+
+            title = (
+                link.get(
+                    "title",
+                    ""
+                )
+                .strip()
+                .lower()
+            )
+
+            if (
+                text in [
+                    "next",
+                    "next page",
+                    "›",
+                    "»"
+                ]
+                or aria_label == "next"
+                or "next page" in aria_label
+                or "next" in title
+            ):
+
+                return urljoin(
+                    self.base_url,
+                    href
+                )
+
+        # ----------------------------------------------------
+        # PAGE NUMBER LINKS
+        # ----------------------------------------------------
+
+        page_links = []
+
+        for link in soup.find_all("a"):
+
+            href = link.get(
+                "href",
+                ""
+            )
+
+            if not href:
+                continue
+
+            absolute_url = urljoin(
+                self.base_url,
+                href
+            )
+
+            parsed = urlparse(
+                absolute_url
+            )
+
+            query = parse_qs(
+                parsed.query
+            )
+
+            if "page" not in query:
+                continue
+
+            try:
+
+                page_number = int(
+                    query["page"][0]
+                )
+
+            except (
+                ValueError,
+                TypeError
+            ):
+
+                continue
+
+            if page_number > current_page:
+
+                page_links.append(
+                    (
+                        page_number,
+                        absolute_url
+                    )
+                )
+
+        if page_links:
+
+            page_links.sort(
+                key=lambda x: x[0]
+            )
+
+            return page_links[0][1]
+
+        return ""
+
+    # ========================================================
+    # LIVE SCRAPE
+    # ========================================================
+
+    def scrape(
+        self
+    ) -> List[Dict[str, Any]]:
+
+        all_jobs: List[
+            Dict[str, Any]
+        ] = []
+
+        visited_urls: Set[str] = set()
+
+        current_url = self.jobs_url
+
+        page_number = 1
+
+        max_pages = 50
+
+        logger.info(
+            "[NJP] Starting live scrape"
+        )
+
+        logger.info(
+            f"[NJP] Starting URL: "
+            f"{current_url}"
+        )
+
+        while (
+            current_url
+            and page_number <= max_pages
+        ):
+
+            if current_url in visited_urls:
+
+                logger.warning(
+                    f"[NJP] Already visited: "
+                    f"{current_url}"
+                )
+
+                break
+
+            visited_urls.add(
+                current_url
+            )
+
+            logger.info(
+                f"[NJP] Downloading page "
+                f"{page_number}: "
+                f"{current_url}"
+            )
+
+            response = (
+                self.fetch_with_retry(
+                    current_url
+                )
+            )
+
+            if not response:
+
+                logger.error(
+                    f"[NJP] Failed to download "
+                    f"page {page_number}"
+                )
+
+                break
+
+            html_content = response.text
+
+            page_jobs = (
+                self.parse_job_cards(
+                    html_content
+                )
+            )
+
+            logger.info(
+                f"[NJP] Page {page_number}: "
+                f"{len(page_jobs)} jobs"
+            )
+
+            all_jobs.extend(
+                page_jobs
+            )
+
+            next_url = (
+                self._find_next_page(
+                    html_content,
+                    current_url
+                )
+            )
+
+            if not next_url:
+
+                logger.info(
+                    "[NJP] No next page found."
+                )
+
+                break
+
+            current_url = next_url
+
+            page_number += 1
+
+        # ====================================================
+        # REMOVE DUPLICATES
+        # ====================================================
+
+        unique_jobs = []
+
+        seen: Set[str] = set()
+
+        for job in all_jobs:
+
+            job_link = job.get(
+                "job_link",
+                ""
+            ).strip()
+
+            title = job.get(
+                "title",
+                ""
+            ).strip().lower()
+
+            unique_key = (
+                job_link
+                if job_link
+                else title
+            )
+
+            if not unique_key:
+                continue
+
+            if unique_key in seen:
+                continue
+
+            seen.add(
+                unique_key
+            )
+
+            unique_jobs.append(
+                job
+            )
+
+        # ====================================================
+        # FINAL STATS
+        # ====================================================
+
+        dates_found = sum(
+            1
+            for job in unique_jobs
+            if job.get("closing_date")
+        )
+
+        logger.info(
+            f"[NJP] Pages scraped: "
+            f"{page_number}"
+        )
+
+        logger.info(
+            f"[NJP] Total jobs collected: "
+            f"{len(all_jobs)}"
+        )
+
+        logger.info(
+            f"[NJP] Unique jobs: "
+            f"{len(unique_jobs)}"
+        )
+
+        logger.info(
+            f"[NJP] Closing dates found: "
+            f"{dates_found}/{len(unique_jobs)}"
+        )
+
+        return unique_jobs
+
+    # ========================================================
+    # SCRAPE FROM HTML FILE
+    # ========================================================
+
+    def scrape_from_file(
+        self,
+        html_file: str
+    ) -> List[Dict[str, Any]]:
+
+        logger.info(
+            f"[NJP] Reading HTML file: "
+            f"{html_file}"
+        )
+
+        with open(
+            html_file,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            html_content = file.read()
+
+        return self.parse_job_cards(
+            html_content
+        )
+
+    # ========================================================
+    # DATABASE FORMAT
+    # ========================================================
+
+    def to_db_format(
+        self,
+        jobs: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+
+        rows = []
+
+        for job in jobs:
+
+            content_hash = (
+                self.calculate_hash(
+                    job.get(
+                        "title",
+                        ""
+                    ),
+                    job.get(
+                        "job_link",
+                        ""
+                    )
+                )
+            )
+
+            job["content_hash"] = (
+                content_hash
+            )
+
+            rows.append(
+                {
+                    "category": "job",
+                    "extra_data": job
+                }
+            )
+
+        return rows
+
+
+# ============================================================
+# MAIN
+# ============================================================
 
 if __name__ == "__main__":
-    scraper = NJPWebsiteScraper('njp_jobs.json')
-    result = scraper.scrape_from_file('debug_njp_page.html')
-    
-    print(f"\n{'='*70}")
-    print(f"📊 FINAL RESULT: {json.dumps(result, indent=2)}")
-    print(f"{'='*70}")
-    
-    # Display sample results
-    if result['status'] == 'success':
-        with open('njp_jobs.json', 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            print(f"\n✅ Saved {len(data['jobs'])} jobs!\n")
-            
-            for i, job in enumerate(data['jobs'][:3], 1):
-                print(f"\n{i}. TITLE: {job.get('title')}")
-                print(f"   Organization: {job.get('organization')}")
-                print(f"   Job Type: {job.get('job_type')}")
-                print(f"   Grade: {job.get('grade')}")
-                print(f"   Vacancies: {job.get('vacancies')}")
-                print(f"   Experience: {job.get('experience')}")
-                print(f"   Closing: {job.get('closing_date')}")
-                print(f"   Link: {job.get('job_link')}")
+
+    # IMPORTANT:
+    # Because we run:
+    # python -m app.scrapers.njp_scraper
+    #
+    # loader must be imported like this.
+
+    from app.scrapers.loader import save_to_db
+
+    scraper = NJPScraper()
+
+    print("=" * 70)
+    print("NJP LIVE SCRAPER")
+    print("=" * 70)
+
+    print(
+        f"\nSource:"
+        f"\n{scraper.jobs_url}\n"
+    )
+
+    # ========================================================
+    # SCRAPE LIVE WEBSITE
+    # ========================================================
+
+    jobs = scraper.scrape()
+
+    print(
+        f"\nJobs extracted: {len(jobs)}"
+    )
+
+    # ========================================================
+    # DISPLAY JOBS
+    # ========================================================
+
+    print("\n" + "=" * 70)
+    print("EXTRACTED JOBS")
+    print("=" * 70)
+
+    for index, job in enumerate(
+        jobs,
+        start=1
+    ):
+
+        print(
+            f"\n{index}. "
+            f"{job.get('title', 'Unknown')}"
+        )
+
+        print(
+            f"   Organization: "
+            f"{job.get('organization', 'N/A')}"
+        )
+
+        print(
+            f"   Job Type: "
+            f"{job.get('job_type', 'N/A')}"
+        )
+
+        print(
+            f"   Grade: "
+            f"{job.get('grade', 'N/A')}"
+        )
+
+        print(
+            f"   Vacancies: "
+            f"{job.get('vacancies', 'N/A')}"
+        )
+
+        print(
+            f"   Experience: "
+            f"{job.get('experience', 'N/A')}"
+        )
+
+        print(
+            f"   Closing Date: "
+            f"{job.get('closing_date', 'N/A')}"
+        )
+
+        print(
+            f"   Job Link: "
+            f"{job.get('job_link', 'N/A')}"
+        )
+
+        print(
+            f"   Apply Link: "
+            f"{job.get('apply_link', 'N/A')}"
+        )
+
+    # ========================================================
+    # NO JOBS
+    # ========================================================
+
+    if not jobs:
+
+        print(
+            "\nNo jobs extracted."
+        )
+
+        sys.exit(1)
+
+    # ========================================================
+    # DATABASE FORMAT
+    # ========================================================
+
+    db_rows = scraper.to_db_format(
+        jobs
+    )
+
+    # ========================================================
+    # SAVE TO SUPABASE
+    # ========================================================
+
+    print(
+        "\nSaving jobs to Supabase..."
+    )
+
+    result = save_to_db(
+        db_rows
+    )
+
+    # ========================================================
+    # DATABASE RESULT
+    # ========================================================
+
+    print("\n" + "=" * 70)
+    print("DATABASE RESULT")
+    print("=" * 70)
+
+    print(
+        f"Saved to DB: "
+        f"{result['inserted']} new, "
+        f"{result['skipped']} already existed "
+        f"(skipped)"
+    )
+
+    print(
+        "\nNJP scraping completed."
+    )
