@@ -62,8 +62,7 @@ class PSICScraper(BaseScraper):
     HEADERS = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 "
-            "(KHTML, like Gecko) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/151.0.0.0 Safari/537.36"
         ),
         "Accept": (
@@ -82,9 +81,6 @@ class PSICScraper(BaseScraper):
     # ========================================================
 
     def __init__(self):
-        # BaseScraper requires source_name, base_url and delay_seconds.
-        # The old code called super().__init__() without arguments and
-        # silently ignored the resulting TypeError.
         super().__init__(
             source_name=self.SOURCE_NAME,
             base_url=self.base_url,
@@ -147,14 +143,10 @@ class PSICScraper(BaseScraper):
     def _fetch(self, url: str) -> Optional[BeautifulSoup]:
         try:
             if not self.is_allowed(url):
-                logger.warning(
-                    "[PSIC] robots.txt blocked URL: %s",
-                    url
-                )
+                logger.warning("[PSIC] robots.txt blocked URL: %s", url)
                 return None
 
             self.respectful_delay()
-
             logger.info("[PSIC] HTTP GET: %s", url)
 
             response = self.session.get(
@@ -170,23 +162,14 @@ class PSICScraper(BaseScraper):
 
             response.raise_for_status()
 
-            return BeautifulSoup(
-                response.text,
-                "html.parser"
-            )
+            return BeautifulSoup(response.text, "html.parser")
 
         except requests.RequestException as exc:
-            logger.error(
-                "[PSIC] Request failed: %s",
-                exc
-            )
+            logger.error("[PSIC] Request failed: %s", exc)
             return None
 
         except Exception as exc:
-            logger.exception(
-                "[PSIC] Unexpected fetch error: %s",
-                exc
-            )
+            logger.exception("[PSIC] Unexpected fetch error: %s", exc)
             return None
 
     # ========================================================
@@ -201,9 +184,7 @@ class PSICScraper(BaseScraper):
         if not container:
             return ""
 
-        text = self._clean_text(
-            container.get_text(" ", strip=True)
-        )
+        text = self._clean_text(container.get_text(" ", strip=True))
 
         cells = container.find_all(
             ["td", "th", "dt", "dd", "div", "span", "p"]
@@ -227,10 +208,7 @@ class PSICScraper(BaseScraper):
                 if label.lower() in current.lower():
                     if index + 1 < len(cells):
                         next_value = self._clean_text(
-                            cells[index + 1].get_text(
-                                " ",
-                                strip=True
-                            )
+                            cells[index + 1].get_text(" ", strip=True)
                         )
                         if next_value:
                             return next_value
@@ -278,10 +256,7 @@ class PSICScraper(BaseScraper):
     # CAREER RECORD
     # ========================================================
 
-    def _parse_career_row(
-        self,
-        row
-    ) -> Optional[Dict[str, Any]]:
+    def _parse_career_row(self, row) -> Optional[Dict[str, Any]]:
         try:
             cells = row.find_all(["td", "th"])
 
@@ -289,23 +264,17 @@ class PSICScraper(BaseScraper):
                 return None
 
             cell_texts = [
-                self._clean_text(
-                    cell.get_text(" ", strip=True)
-                )
+                self._clean_text(cell.get_text(" ", strip=True))
                 for cell in cells
             ]
 
-            row_text = self._clean_text(
-                row.get_text(" ", strip=True)
-            )
+            row_text = self._clean_text(row.get_text(" ", strip=True))
 
             title = ""
             link = row.find("a", href=True)
 
             if link:
-                title = self._clean_text(
-                    link.get_text(" ", strip=True)
-                )
+                title = self._clean_text(link.get_text(" ", strip=True))
 
             if not title and cell_texts:
                 title = cell_texts[0]
@@ -339,42 +308,32 @@ class PSICScraper(BaseScraper):
             dates = []
 
             for text in cell_texts:
-                dates.extend(
-                    re.findall(
-                        r"\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b",
-                        text
-                    )
-                )
-
-                dates.extend(
-                    re.findall(
-                        r"\b\d{1,2}\s+"
-                        r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
-                        r"[a-z]*\s+\d{4}\b",
-                        text,
-                        re.I
-                    )
-                )
+                dates.extend(re.findall(
+                    r"\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b",
+                    text
+                ))
+                dates.extend(re.findall(
+                    r"\b\d{1,2}\s+"
+                    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+                    r"[a-z]*\s+\d{4}\b",
+                    text,
+                    re.I
+                ))
 
             dates = list(dict.fromkeys(dates))
 
             posted_date = (
                 self._normalize_date(dates[0])
-                if len(dates) >= 1
-                else ""
+                if len(dates) >= 1 else ""
             )
-
             closing_date = (
                 self._normalize_date(dates[1])
-                if len(dates) >= 2
-                else ""
+                if len(dates) >= 2 else ""
             )
 
             status = ""
-
             for text in cell_texts:
                 lower = text.lower()
-
                 if "closed" in lower:
                     status = "Closed"
                     break
@@ -390,17 +349,9 @@ class PSICScraper(BaseScraper):
 
             location = ""
             pakistan_locations = [
-                "lahore",
-                "multan",
-                "rawalpindi",
-                "islamabad",
-                "faisalabad",
-                "gujranwala",
-                "sialkot",
-                "bahawalpur",
-                "sargodha",
-                "dera ghazi khan",
-                "punjab",
+                "lahore", "multan", "rawalpindi", "islamabad",
+                "faisalabad", "gujranwala", "sialkot", "bahawalpur",
+                "sargodha", "dera ghazi khan", "punjab",
             ]
 
             for text in cell_texts:
@@ -412,12 +363,8 @@ class PSICScraper(BaseScraper):
             if not location:
                 location = "Punjab, Pakistan"
 
-            # Careers are jobs. Project/loan classification is handled
-            # separately by _get_project_record_type().
-            record_type = "job"
-
             return {
-                "record_type": record_type,
+                "record_type": "job",
                 "title": title,
                 "description": row_text,
                 "location": location,
@@ -431,53 +378,35 @@ class PSICScraper(BaseScraper):
             }
 
         except Exception as exc:
-            logger.exception(
-                "[PSIC] Career row parsing failed: %s",
-                exc
-            )
+            logger.exception("[PSIC] Career row parsing failed: %s", exc)
             return None
 
     # ========================================================
     # PARSE CAREERS
     # ========================================================
 
-    def parse_careers_html(
-        self,
-        soup: BeautifulSoup
-    ) -> List[Dict[str, Any]]:
+    def parse_careers_html(self, soup: BeautifulSoup) -> List[Dict[str, Any]]:
         careers: List[Dict[str, Any]] = []
 
         if not soup:
             return careers
 
         rows = soup.find_all("tr")
-
-        logger.info(
-            "[PSIC] Found %s career rows",
-            len(rows)
-        )
+        logger.info("[PSIC] Found %s career rows", len(rows))
 
         for row in rows:
             record = self._parse_career_row(row)
-
             if record and record.get("title"):
                 careers.append(record)
 
-        logger.info(
-            "[PSIC] Total careers extracted: %s",
-            len(careers)
-        )
-
+        logger.info("[PSIC] Total careers extracted: %s", len(careers))
         return careers
 
     # ========================================================
     # FIND PROJECT DETAIL LINKS
     # ========================================================
 
-    def _find_project_links(
-        self,
-        soup: BeautifulSoup
-    ) -> List[str]:
+    def _find_project_links(self, soup: BeautifulSoup) -> List[str]:
         links: List[str] = []
 
         if not soup:
@@ -487,15 +416,11 @@ class PSICScraper(BaseScraper):
 
         for anchor in soup.find_all("a", href=True):
             href = anchor.get("href", "").strip()
-
             if not href:
                 continue
 
             absolute_url = urljoin(self.base_url, href)
-            parsed_path = absolute_url.split(
-                self.base_url,
-                1
-            )[-1]
+            parsed_path = absolute_url.split(self.base_url, 1)[-1]
 
             if re.search(r"/node/\d+/?$", parsed_path):
                 if absolute_url not in seen:
@@ -506,17 +431,13 @@ class PSICScraper(BaseScraper):
             "[PSIC] Found %s project node links on projects page",
             len(links)
         )
-
         return links
 
     # ========================================================
     # EXTRACT PROJECT TITLE
     # ========================================================
 
-    def _extract_project_title(
-        self,
-        soup: BeautifulSoup
-    ) -> str:
+    def _extract_project_title(self, soup: BeautifulSoup) -> str:
         selectors = [
             "h1.page-header",
             "h1",
@@ -528,76 +449,198 @@ class PSICScraper(BaseScraper):
 
         for selector in selectors:
             element = soup.select_one(selector)
-
             if element:
                 title = self._clean_text(
                     element.get_text(" ", strip=True)
                 )
-
                 if title:
                     return title
 
         if soup.title:
-            title = self._clean_text(
-                soup.title.get_text(" ", strip=True)
-            )
-
+            title = self._clean_text(soup.title.get_text(" ", strip=True))
             title = re.sub(
-                r"\s*[-|]\s*"
-                r"(Punjab Small Industries Corporation|PSIC).*$",
+                r"\s*[-|]\s*(Punjab Small Industries Corporation|PSIC).*$",
                 "",
                 title,
                 flags=re.I
             )
-
             if title:
                 return title
 
         return ""
 
     # ========================================================
+    # REMOVE WEBSITE CHROME FROM CONTENT
+    # ========================================================
+
+    @staticmethod
+    def _remove_site_chrome(text: str) -> str:
+        """Remove repeated PSIC header/footer/navigation text."""
+        if not text:
+            return ""
+
+        noise_phrases = [
+            "FAQs Rules & Policies Downloads Publications Sitemap Contact Us",
+            "Head Office Punjab Small Industries Corporation",
+            "23 A DAVIS ROAD PSIC HOUSE, LAHORE",
+            "Contact: 042- 992000439",
+            "About Us Field offices Objectives Messages Board of Members Core Team Organogram",
+            "Overview Vision Mission",
+            "Quick Links Tenders Jobs",
+            "Punjab Small Industries Corporation, Government of the Punjab",
+            "Powered by: Punjab Information Technology Board",
+        ]
+
+        cleaned = text
+
+        for phrase in noise_phrases:
+            cleaned = re.sub(
+                re.escape(phrase),
+                " ",
+                cleaned,
+                flags=re.I
+            )
+
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
+
+    # ========================================================
+    # CHECK IF TEXT IS MOSTLY WEBSITE NAVIGATION
+    # ========================================================
+
+    @staticmethod
+    def _is_navigation_text(text: str, title: str = "") -> bool:
+        if not text:
+            return True
+
+        lower = text.lower()
+
+        navigation_terms = [
+            "faqs",
+            "rules & policies",
+            "downloads",
+            "publications",
+            "sitemap",
+            "contact us",
+            "head office",
+            "quick links",
+            "powered by",
+            "core team",
+            "organogram",
+            "board of members",
+            "field offices",
+        ]
+
+        hits = sum(1 for term in navigation_terms if term in lower)
+
+        if hits >= 3:
+            return True
+
+        if title:
+            title_lower = title.lower()
+            if lower == title_lower:
+                return False
+
+        return False
+
+    # ========================================================
     # EXTRACT PROJECT DESCRIPTION
     # ========================================================
 
-    def _extract_project_description(
-        self,
-        soup: BeautifulSoup
-    ) -> str:
+    def _extract_project_description(self, soup: BeautifulSoup) -> str:
+        """Extract actual node content instead of the full website chrome."""
+
         selectors = [
             ".field--name-body",
             ".field-name-body",
-            ".node__content",
             ".field--type-text-with-summary",
+            ".node__content",
+            ".node__body",
+            ".field--name-field-description",
+            ".field--name-field-content",
             "article .content",
             "article",
+            "[role='main']",
             "main",
         ]
 
-        for selector in selectors:
-            elements = soup.select(selector)
+        # Site-wide elements that should never become a project description.
+        unwanted_selectors = [
+            "script",
+            "style",
+            "noscript",
+            "nav",
+            "header",
+            "footer",
+            "aside",
+            "form",
+            ".breadcrumb",
+            ".pager",
+            ".pagination",
+            ".region-sidebar-first",
+            ".region-sidebar-second",
+            ".sidebar",
+            ".menu",
+            ".navbar",
+            ".toolbar",
+        ]
 
-            for element in elements:
-                # Work on a copy so removing unwanted elements does not
-                # accidentally mutate the original soup tree.
+        candidates: List[str] = []
+
+        for selector in selectors:
+            for element in soup.select(selector):
                 element_copy = BeautifulSoup(
                     str(element),
                     "html.parser"
                 )
 
+                # Remove elements by standard selectors.
                 for unwanted in element_copy.select(
-                    "script, style, nav, header, footer, "
-                    ".breadcrumb, .pager, .pagination"
+                    ", ".join(unwanted_selectors)
                 ):
                     unwanted.decompose()
+
+                # Remove containers whose class/id clearly belongs to
+                # website chrome (menu/header/footer/sidebar/navigation).
+                for node in element_copy.find_all(True):
+                    class_text = " ".join(node.get("class", []))
+                    id_text = node.get("id", "") or ""
+                    marker = f"{class_text} {id_text}".lower()
+
+                    if re.search(
+                        r"(header|footer|sidebar|navbar|navigation|menu|breadcrumb|toolbar|region-sidebar)",
+                        marker,
+                        re.I
+                    ):
+                        node.decompose()
 
                 text = self._clean_text(
                     element_copy.get_text(" ", strip=True)
                 )
 
-                if len(text) > 30:
-                    return text
+                text = self._remove_site_chrome(text)
 
-        return ""
+                if not text:
+                    continue
+
+                if self._is_navigation_text(text):
+                    continue
+
+                candidates.append(text)
+
+        if not candidates:
+            return ""
+
+        # Prefer the most focused/shortest meaningful content instead of
+        # returning a large parent <main> containing unrelated page text.
+        candidates = list(dict.fromkeys(candidates))
+        candidates.sort(key=lambda value: len(value))
+
+        for candidate in candidates:
+            if len(candidate) >= 20:
+                return candidate
+
+        return candidates[0]
 
     # ========================================================
     # FETCH PROJECT DETAIL
@@ -607,13 +650,9 @@ class PSICScraper(BaseScraper):
         self,
         detail_url: str
     ) -> Optional[Dict[str, Any]]:
-        logger.info(
-            "[PSIC] Fetching project detail: %s",
-            detail_url
-        )
+        logger.info("[PSIC] Fetching project detail: %s", detail_url)
 
         soup = self._fetch(detail_url)
-
         if not soup:
             return None
 
@@ -627,10 +666,7 @@ class PSICScraper(BaseScraper):
             )
             return None
 
-        record_type = self._get_project_record_type(
-            title,
-            description
-        )
+        record_type = self._get_project_record_type(title, description)
 
         location = self._find_label_value(
             soup,
@@ -640,30 +676,18 @@ class PSICScraper(BaseScraper):
         posted_date = self._normalize_date(
             self._find_label_value(
                 soup,
-                [
-                    "Posted Date",
-                    "Publish Date",
-                    "Published",
-                    "Date",
-                ]
+                ["Posted Date", "Publish Date", "Published", "Date"]
             )
         )
 
         closing_date = self._normalize_date(
             self._find_label_value(
                 soup,
-                [
-                    "Closing Date",
-                    "Deadline",
-                    "Last Date",
-                ]
+                ["Closing Date", "Deadline", "Last Date"]
             )
         )
 
-        status = self._find_label_value(
-            soup,
-            ["Status"]
-        ) or "N/A"
+        status = self._find_label_value(soup, ["Status"]) or "N/A"
 
         return {
             "record_type": record_type,
@@ -683,10 +707,7 @@ class PSICScraper(BaseScraper):
     # PARSE PROJECTS
     # ========================================================
 
-    def parse_projects_html(
-        self,
-        soup: BeautifulSoup
-    ) -> List[Dict[str, Any]]:
+    def parse_projects_html(self, soup: BeautifulSoup) -> List[Dict[str, Any]]:
         projects: List[Dict[str, Any]] = []
 
         if not soup:
@@ -703,10 +724,8 @@ class PSICScraper(BaseScraper):
 
             try:
                 record = self._fetch_project_detail(detail_url)
-
                 if record:
                     projects.append(record)
-
             except Exception as exc:
                 logger.exception(
                     "[PSIC] Failed project %s: %s",
@@ -737,28 +756,22 @@ class PSICScraper(BaseScraper):
         careers_soup = self._fetch(self.careers_url)
 
         if careers_soup:
-            all_records.extend(
-                self.parse_careers_html(careers_soup)
-            )
+            all_records.extend(self.parse_careers_html(careers_soup))
 
         logger.info("[PSIC] URL: %s", self.projects_url)
         projects_soup = self._fetch(self.projects_url)
 
         if projects_soup:
-            all_records.extend(
-                self.parse_projects_html(projects_soup)
-            )
+            all_records.extend(self.parse_projects_html(projects_soup))
 
         career_count = sum(
             1 for record in all_records
             if record.get("record_type") == "job"
         )
-
         project_count = sum(
             1 for record in all_records
             if record.get("record_type") == "project"
         )
-
         loan_count = sum(
             1 for record in all_records
             if record.get("record_type") == "loan"
@@ -778,10 +791,7 @@ class PSICScraper(BaseScraper):
     # DATABASE FORMAT
     # ========================================================
 
-    def to_db_format(
-        self,
-        record: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def to_db_format(self, record: Dict[str, Any]) -> Dict[str, Any]:
         category = record.get("record_type", "job")
 
         extra_data = dict(record)
@@ -796,10 +806,7 @@ class PSICScraper(BaseScraper):
     # SAVE TO DATABASE
     # ========================================================
 
-    def save_to_database(
-        self,
-        records: List[Dict[str, Any]]
-    ) -> None:
+    def save_to_database(self, records: List[Dict[str, Any]]) -> None:
         if not records:
             logger.warning("[PSIC] No records to save")
             return
