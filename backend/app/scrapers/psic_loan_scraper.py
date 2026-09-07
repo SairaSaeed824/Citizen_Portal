@@ -75,17 +75,21 @@ class PSICScraper(BaseScraper):
     }
 
     REQUEST_TIMEOUT = 30
+    DELAY_SECONDS = 2.5
 
     # ========================================================
     # INIT
     # ========================================================
 
     def __init__(self):
-        try:
-            super().__init__()
-        except TypeError:
-            # In case BaseScraper does not define __init__
-            pass
+        # BaseScraper requires source_name, base_url and delay_seconds.
+        # The old code called super().__init__() without arguments and
+        # silently ignored the resulting TypeError.
+        super().__init__(
+            source_name=self.SOURCE_NAME,
+            base_url=self.base_url,
+            delay_seconds=self.DELAY_SECONDS,
+        )
 
         self.session = requests.Session()
         self.session.headers.update(self.HEADERS)
@@ -100,11 +104,8 @@ class PSICScraper(BaseScraper):
             return ""
 
         text = str(value)
-
         text = text.replace("\xa0", " ")
-
         text = re.sub(r"\s+", " ", text)
-
         return text.strip()
 
     # ========================================================
@@ -144,8 +145,16 @@ class PSICScraper(BaseScraper):
     # ========================================================
 
     def _fetch(self, url: str) -> Optional[BeautifulSoup]:
-
         try:
+            if not self.is_allowed(url):
+                logger.warning(
+                    "[PSIC] robots.txt blocked URL: %s",
+                    url
+                )
+                return None
+
+            self.respectful_delay()
+
             logger.info("[PSIC] HTTP GET: %s", url)
 
             response = self.session.get(
@@ -167,25 +176,21 @@ class PSICScraper(BaseScraper):
             )
 
         except requests.RequestException as exc:
-
             logger.error(
                 "[PSIC] Request failed: %s",
                 exc
             )
-
             return None
 
         except Exception as exc:
-
             logger.exception(
                 "[PSIC] Unexpected fetch error: %s",
                 exc
             )
-
             return None
 
     # ========================================================
-    # FIND VALUE FROM ROW
+    # FIND VALUE FROM CONTAINER
     # ========================================================
 
     def _find_label_value(
@@ -193,7 +198,6 @@ class PSICScraper(BaseScraper):
         container,
         labels: List[str]
     ) -> str:
-
         if not container:
             return ""
 
@@ -201,59 +205,37 @@ class PSICScraper(BaseScraper):
             container.get_text(" ", strip=True)
         )
 
-        # ----------------------------------------------------
-        # Search table cells
-        # ----------------------------------------------------
-
         cells = container.find_all(
             ["td", "th", "dt", "dd", "div", "span", "p"]
         )
 
         for index, element in enumerate(cells):
-
             current = self._clean_text(
                 element.get_text(" ", strip=True)
             )
 
-            current_lower = current.lower()
-
             for label in labels:
+                match = re.search(
+                    rf"{re.escape(label)}\s*:\s*(.+)",
+                    current,
+                    re.I
+                )
 
-                label_lower = label.lower()
+                if match:
+                    return self._clean_text(match.group(1))
 
-                if label_lower in current_lower:
-
-                    # Same element with colon
-                    match = re.search(
-                        rf"{re.escape(label)}\s*:\s*(.+)",
-                        current,
-                        re.I
-                    )
-
-                    if match:
-                        return self._clean_text(
-                            match.group(1)
-                        )
-
-                    # Next element
+                if label.lower() in current.lower():
                     if index + 1 < len(cells):
-
                         next_value = self._clean_text(
                             cells[index + 1].get_text(
                                 " ",
                                 strip=True
                             )
                         )
-
                         if next_value:
                             return next_value
 
-        # ----------------------------------------------------
-        # Search complete text
-        # ----------------------------------------------------
-
         for label in labels:
-
             match = re.search(
                 rf"{re.escape(label)}\s*:\s*([^|]+)",
                 text,
@@ -261,9 +243,7 @@ class PSICScraper(BaseScraper):
             )
 
             if match:
-                return self._clean_text(
-                    match.group(1)
-                )
+                return self._clean_text(match.group(1))
 
         return ""
 
@@ -276,10 +256,7 @@ class PSICScraper(BaseScraper):
         title: str,
         description: str
     ) -> str:
-
-        combined = (
-            f"{title} {description}"
-        ).lower()
+        combined = f"{title} {description}".lower()
 
         loan_keywords = [
             "loan",
@@ -292,10 +269,8 @@ class PSICScraper(BaseScraper):
             "financial assistance",
         ]
 
-        for keyword in loan_keywords:
-
-            if keyword in combined:
-                return "loan"
+        if any(keyword in combined for keyword in loan_keywords):
+            return "loan"
 
         return "project"
 
@@ -307,80 +282,43 @@ class PSICScraper(BaseScraper):
         self,
         row
     ) -> Optional[Dict[str, Any]]:
-
         try:
-
-            cells = row.find_all(
-                ["td", "th"]
-            )
+            cells = row.find_all(["td", "th"])
 
             if not cells:
                 return None
 
             cell_texts = [
                 self._clean_text(
-                    cell.get_text(
-                        " ",
-                        strip=True
-                    )
+                    cell.get_text(" ", strip=True)
                 )
                 for cell in cells
             ]
 
             row_text = self._clean_text(
-                row.get_text(
-                    " ",
-                    strip=True
-                )
+                row.get_text(" ", strip=True)
             )
-
-            # ------------------------------------------------
-            # Find title
-            # ------------------------------------------------
 
             title = ""
-
-            link = row.find(
-                "a",
-                href=True
-            )
+            link = row.find("a", href=True)
 
             if link:
-
                 title = self._clean_text(
-                    link.get_text(
-                        " ",
-                        strip=True
-                    )
+                    link.get_text(" ", strip=True)
                 )
 
             if not title and cell_texts:
                 title = cell_texts[0]
 
-            # ------------------------------------------------
-            # Find PDF / detail link
-            # ------------------------------------------------
-
             href = ""
 
-            for anchor in row.find_all(
-                "a",
-                href=True
-            ):
-
-                candidate = anchor.get(
-                    "href",
-                    ""
-                ).strip()
-
+            for anchor in row.find_all("a", href=True):
+                candidate = anchor.get("href", "").strip()
                 if not candidate:
                     continue
 
                 candidate_text = self._clean_text(
-                    anchor.get_text(
-                        " ",
-                        strip=True
-                    )
+                    anchor.get_text(" ", strip=True)
                 ).lower()
 
                 if (
@@ -396,85 +334,61 @@ class PSICScraper(BaseScraper):
                     href = candidate
 
             if href:
-                href = urljoin(
-                    self.base_url,
-                    href
-                )
-
-            # ------------------------------------------------
-            # Extract dates
-            # ------------------------------------------------
+                href = urljoin(self.base_url, href)
 
             dates = []
 
             for text in cell_texts:
-
-                matches = re.findall(
-                    r"\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b",
-                    text
+                dates.extend(
+                    re.findall(
+                        r"\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b",
+                        text
+                    )
                 )
 
-                dates.extend(matches)
-
-                matches2 = re.findall(
-                    r"\b\d{1,2}\s+"
-                    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
-                    r"[a-z]*\s+\d{4}\b",
-                    text,
-                    re.I
+                dates.extend(
+                    re.findall(
+                        r"\b\d{1,2}\s+"
+                        r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+                        r"[a-z]*\s+\d{4}\b",
+                        text,
+                        re.I
+                    )
                 )
 
-                dates.extend(matches2)
+            dates = list(dict.fromkeys(dates))
 
-            dates = list(
-                dict.fromkeys(dates)
+            posted_date = (
+                self._normalize_date(dates[0])
+                if len(dates) >= 1
+                else ""
             )
 
-            posted_date = ""
-            closing_date = ""
-
-            if len(dates) >= 1:
-                posted_date = self._normalize_date(
-                    dates[0]
-                )
-
-            if len(dates) >= 2:
-                closing_date = self._normalize_date(
-                    dates[1]
-                )
-
-            # ------------------------------------------------
-            # Status
-            # ------------------------------------------------
+            closing_date = (
+                self._normalize_date(dates[1])
+                if len(dates) >= 2
+                else ""
+            )
 
             status = ""
 
             for text in cell_texts:
-
                 lower = text.lower()
 
                 if "closed" in lower:
                     status = "Closed"
                     break
-
+                if "expired" in lower:
+                    status = "Expired"
+                    break
+                if "active" in lower:
+                    status = "Active"
+                    break
                 if "open" in lower:
                     status = "Open"
                     break
 
-                if "active" in lower:
-                    status = "Active"
-                    break
-
-                if "expired" in lower:
-                    status = "Expired"
-                    break
-
-            # ------------------------------------------------
-            # Location
-            # ------------------------------------------------
-
             location = ""
-
             pakistan_locations = [
                 "lahore",
                 "multan",
@@ -490,34 +404,19 @@ class PSICScraper(BaseScraper):
             ]
 
             for text in cell_texts:
-
                 lower = text.lower()
-
-                if any(
-                    location_name in lower
-                    for location_name in pakistan_locations
-                ):
+                if any(name in lower for name in pakistan_locations):
                     location = text
                     break
-
-            # ------------------------------------------------
-            # Fallback location
-            # ------------------------------------------------
 
             if not location:
                 location = "Punjab, Pakistan"
 
-            # ------------------------------------------------
-            # Determine record type
-            # ------------------------------------------------
-
+            # Careers are jobs. Project/loan classification is handled
+            # separately by _get_project_record_type().
             record_type = "job"
 
-            # ------------------------------------------------
-            # Return complete record
-            # ------------------------------------------------
-
-            record = {
+            return {
                 "record_type": record_type,
                 "title": title,
                 "description": row_text,
@@ -528,20 +427,14 @@ class PSICScraper(BaseScraper):
                 "status": status,
                 "link": href,
                 "source": self.SOURCE_NAME,
-                "scraped_at": datetime.now(
-                    timezone.utc
-                ).isoformat(),
+                "scraped_at": datetime.now(timezone.utc).isoformat(),
             }
 
-            return record
-
         except Exception as exc:
-
             logger.exception(
                 "[PSIC] Career row parsing failed: %s",
                 exc
             )
-
             return None
 
     # ========================================================
@@ -552,8 +445,7 @@ class PSICScraper(BaseScraper):
         self,
         soup: BeautifulSoup
     ) -> List[Dict[str, Any]]:
-
-        careers = []
+        careers: List[Dict[str, Any]] = []
 
         if not soup:
             return careers
@@ -566,16 +458,10 @@ class PSICScraper(BaseScraper):
         )
 
         for row in rows:
-
-            record = self._parse_career_row(
-                row
-            )
+            record = self._parse_career_row(row)
 
             if record and record.get("title"):
-
-                careers.append(
-                    record
-                )
+                careers.append(record)
 
         logger.info(
             "[PSIC] Total careers extracted: %s",
@@ -592,55 +478,29 @@ class PSICScraper(BaseScraper):
         self,
         soup: BeautifulSoup
     ) -> List[str]:
-
-        links = []
+        links: List[str] = []
 
         if not soup:
             return links
 
         seen = set()
 
-        # ----------------------------------------------------
-        # Find Drupal node links
-        # ----------------------------------------------------
-
-        for anchor in soup.find_all(
-            "a",
-            href=True
-        ):
-
-            href = anchor.get(
-                "href",
-                ""
-            ).strip()
+        for anchor in soup.find_all("a", href=True):
+            href = anchor.get("href", "").strip()
 
             if not href:
                 continue
 
-            absolute_url = urljoin(
-                self.base_url,
-                href
-            )
-
+            absolute_url = urljoin(self.base_url, href)
             parsed_path = absolute_url.split(
                 self.base_url,
                 1
             )[-1]
 
-            if re.search(
-                r"/node/\d+/?$",
-                parsed_path
-            ):
-
+            if re.search(r"/node/\d+/?$", parsed_path):
                 if absolute_url not in seen:
-
-                    seen.add(
-                        absolute_url
-                    )
-
-                    links.append(
-                        absolute_url
-                    )
+                    seen.add(absolute_url)
+                    links.append(absolute_url)
 
         logger.info(
             "[PSIC] Found %s project node links on projects page",
@@ -657,7 +517,6 @@ class PSICScraper(BaseScraper):
         self,
         soup: BeautifulSoup
     ) -> str:
-
         selectors = [
             "h1.page-header",
             "h1",
@@ -668,34 +527,19 @@ class PSICScraper(BaseScraper):
         ]
 
         for selector in selectors:
-
-            element = soup.select_one(
-                selector
-            )
+            element = soup.select_one(selector)
 
             if element:
-
                 title = self._clean_text(
-                    element.get_text(
-                        " ",
-                        strip=True
-                    )
+                    element.get_text(" ", strip=True)
                 )
 
                 if title:
                     return title
 
-        # ----------------------------------------------------
-        # Fallback to HTML title
-        # ----------------------------------------------------
-
         if soup.title:
-
             title = self._clean_text(
-                soup.title.get_text(
-                    " ",
-                    strip=True
-                )
+                soup.title.get_text(" ", strip=True)
             )
 
             title = re.sub(
@@ -719,7 +563,6 @@ class PSICScraper(BaseScraper):
         self,
         soup: BeautifulSoup
     ) -> str:
-
         selectors = [
             ".field--name-body",
             ".field-name-body",
@@ -731,25 +574,24 @@ class PSICScraper(BaseScraper):
         ]
 
         for selector in selectors:
-
-            elements = soup.select(
-                selector
-            )
+            elements = soup.select(selector)
 
             for element in elements:
+                # Work on a copy so removing unwanted elements does not
+                # accidentally mutate the original soup tree.
+                element_copy = BeautifulSoup(
+                    str(element),
+                    "html.parser"
+                )
 
-                # Remove irrelevant elements
-                for unwanted in element.select(
+                for unwanted in element_copy.select(
                     "script, style, nav, header, footer, "
                     ".breadcrumb, .pager, .pagination"
                 ):
                     unwanted.decompose()
 
                 text = self._clean_text(
-                    element.get_text(
-                        " ",
-                        strip=True
-                    )
+                    element_copy.get_text(" ", strip=True)
                 )
 
                 if len(text) > 30:
@@ -765,34 +607,24 @@ class PSICScraper(BaseScraper):
         self,
         detail_url: str
     ) -> Optional[Dict[str, Any]]:
-
         logger.info(
             "[PSIC] Fetching project detail: %s",
             detail_url
         )
 
-        soup = self._fetch(
-            detail_url
-        )
+        soup = self._fetch(detail_url)
 
         if not soup:
             return None
 
-        title = self._extract_project_title(
-            soup
-        )
-
-        description = self._extract_project_description(
-            soup
-        )
+        title = self._extract_project_title(soup)
+        description = self._extract_project_description(soup)
 
         if not title:
-
             logger.warning(
                 "[PSIC] Could not extract title: %s",
                 detail_url
             )
-
             return None
 
         record_type = self._get_project_record_type(
@@ -800,65 +632,40 @@ class PSICScraper(BaseScraper):
             description
         )
 
-        # ----------------------------------------------------
-        # Try extracting additional information
-        # ----------------------------------------------------
-
         location = self._find_label_value(
             soup,
-            [
-                "Location",
-                "District",
-                "City",
-                "Address",
-            ]
-        )
-
-        if not location:
-            location = "Punjab, Pakistan"
-
-        posted_date = self._find_label_value(
-            soup,
-            [
-                "Posted Date",
-                "Publish Date",
-                "Published",
-                "Date",
-            ]
-        )
+            ["Location", "District", "City", "Address"]
+        ) or "Punjab, Pakistan"
 
         posted_date = self._normalize_date(
-            posted_date
-        )
-
-        closing_date = self._find_label_value(
-            soup,
-            [
-                "Closing Date",
-                "Deadline",
-                "Last Date",
-            ]
+            self._find_label_value(
+                soup,
+                [
+                    "Posted Date",
+                    "Publish Date",
+                    "Published",
+                    "Date",
+                ]
+            )
         )
 
         closing_date = self._normalize_date(
-            closing_date
+            self._find_label_value(
+                soup,
+                [
+                    "Closing Date",
+                    "Deadline",
+                    "Last Date",
+                ]
+            )
         )
 
         status = self._find_label_value(
             soup,
-            [
-                "Status"
-            ]
-        )
+            ["Status"]
+        ) or "N/A"
 
-        if not status:
-            status = "N/A"
-
-        # ----------------------------------------------------
-        # Complete record
-        # ----------------------------------------------------
-
-        record = {
+        return {
             "record_type": record_type,
             "title": title,
             "description": description,
@@ -869,12 +676,8 @@ class PSICScraper(BaseScraper):
             "status": status,
             "link": detail_url,
             "source": self.SOURCE_NAME,
-            "scraped_at": datetime.now(
-                timezone.utc
-            ).isoformat(),
+            "scraped_at": datetime.now(timezone.utc).isoformat(),
         }
-
-        return record
 
     # ========================================================
     # PARSE PROJECTS
@@ -884,21 +687,14 @@ class PSICScraper(BaseScraper):
         self,
         soup: BeautifulSoup
     ) -> List[Dict[str, Any]]:
-
-        projects = []
+        projects: List[Dict[str, Any]] = []
 
         if not soup:
             return projects
 
-        detail_links = self._find_project_links(
-            soup
-        )
+        detail_links = self._find_project_links(soup)
 
-        for index, detail_url in enumerate(
-            detail_links,
-            start=1
-        ):
-
+        for index, detail_url in enumerate(detail_links, start=1):
             logger.info(
                 "[PSIC] Processing project %s/%s",
                 index,
@@ -906,19 +702,12 @@ class PSICScraper(BaseScraper):
             )
 
             try:
-
-                record = self._fetch_project_detail(
-                    detail_url
-                )
+                record = self._fetch_project_detail(detail_url)
 
                 if record:
-
-                    projects.append(
-                        record
-                    )
+                    projects.append(record)
 
             except Exception as exc:
-
                 logger.exception(
                     "[PSIC] Failed project %s: %s",
                     detail_url,
@@ -937,107 +726,50 @@ class PSICScraper(BaseScraper):
     # ========================================================
 
     def scrape(self) -> List[Dict[str, Any]]:
-
-        all_records = []
+        all_records: List[Dict[str, Any]] = []
 
         logger.info("=" * 70)
-        logger.info(
-            "PSIC LIVE SCRAPER (CAREERS + PROJECTS)"
-        )
+        logger.info("PSIC LIVE SCRAPER (CAREERS + PROJECTS)")
         logger.info("=" * 70)
+        logger.info("[PSIC] Starting live scraper")
 
-        logger.info(
-            "[PSIC] Starting live scraper"
-        )
-
-        # ====================================================
-        # CAREERS
-        # ====================================================
-
-        logger.info(
-            "[PSIC] URL: %s",
-            self.careers_url
-        )
-
-        careers_soup = self._fetch(
-            self.careers_url
-        )
+        logger.info("[PSIC] URL: %s", self.careers_url)
+        careers_soup = self._fetch(self.careers_url)
 
         if careers_soup:
-
-            careers = self.parse_careers_html(
-                careers_soup
-            )
-
             all_records.extend(
-                careers
+                self.parse_careers_html(careers_soup)
             )
 
-        # ====================================================
-        # PROJECTS
-        # ====================================================
-
-        logger.info(
-            "[PSIC] URL: %s",
-            self.projects_url
-        )
-
-        projects_soup = self._fetch(
-            self.projects_url
-        )
+        logger.info("[PSIC] URL: %s", self.projects_url)
+        projects_soup = self._fetch(self.projects_url)
 
         if projects_soup:
-
-            projects = self.parse_projects_html(
-                projects_soup
-            )
-
             all_records.extend(
-                projects
+                self.parse_projects_html(projects_soup)
             )
-
-        # ====================================================
-        # SUMMARY
-        # ====================================================
 
         career_count = sum(
-            1
-            for record in all_records
+            1 for record in all_records
             if record.get("record_type") == "job"
         )
 
         project_count = sum(
-            1
-            for record in all_records
+            1 for record in all_records
             if record.get("record_type") == "project"
         )
 
         loan_count = sum(
-            1
-            for record in all_records
+            1 for record in all_records
             if record.get("record_type") == "loan"
         )
 
         logger.info("=" * 70)
-        logger.info(
-            "[PSIC] SCRAPING COMPLETE"
-        )
-        logger.info(
-            "[PSIC] Careers: %s",
-            career_count
-        )
-        logger.info(
-            "[PSIC] Projects: %s",
-            project_count
-        )
-        logger.info(
-            "[PSIC] Loans: %s",
-            loan_count
-        )
-        logger.info(
-            "[PSIC] Total records: %s",
-            len(all_records)
-        )
+        logger.info("[PSIC] SCRAPING COMPLETE")
+        logger.info("[PSIC] Careers: %s", career_count)
+        logger.info("[PSIC] Projects: %s", project_count)
+        logger.info("[PSIC] Loans: %s", loan_count)
+        logger.info("[PSIC] Total records: %s", len(all_records))
         logger.info("=" * 70)
 
         return all_records
@@ -1050,25 +782,10 @@ class PSICScraper(BaseScraper):
         self,
         record: Dict[str, Any]
     ) -> Dict[str, Any]:
+        category = record.get("record_type", "job")
 
-        category = record.get(
-            "record_type",
-            "job"
-        )
-
-        # ----------------------------------------------------
-        # Preserve EVERYTHING
-        # ----------------------------------------------------
-
-        extra_data = dict(
-            record
-        )
-
-        # record_type is represented by category
-        extra_data.pop(
-            "record_type",
-            None
-        )
+        extra_data = dict(record)
+        extra_data.pop("record_type", None)
 
         return {
             "category": category,
@@ -1083,13 +800,8 @@ class PSICScraper(BaseScraper):
         self,
         records: List[Dict[str, Any]]
     ) -> None:
-
         if not records:
-
-            logger.warning(
-                "[PSIC] No records to save"
-            )
-
+            logger.warning("[PSIC] No records to save")
             return
 
         logger.info(
@@ -1098,124 +810,77 @@ class PSICScraper(BaseScraper):
         )
 
         try:
-
             db = get_db()
 
-            # ------------------------------------------------
-            # Convert records
-            # ------------------------------------------------
-
             db_records = [
-                self.to_db_format(
-                    record
-                )
+                self.to_db_format(record)
                 for record in records
             ]
-
-            # ------------------------------------------------
-            # Group by category
-            # ------------------------------------------------
 
             categories = set(
                 record["category"]
                 for record in db_records
             )
 
-            # ------------------------------------------------
-            # Delete old PSIC records
-            # ------------------------------------------------
-
             for category in categories:
-
                 try:
-
                     existing = (
                         db.table("opportunities")
                         .select("id, category, extra_data")
-                        .eq(
-                            "category",
-                            category
-                        )
+                        .eq("category", category)
                         .execute()
                     )
 
-                    if existing.data:
+                    delete_ids = []
 
-                        delete_ids = []
+                    for row in (existing.data or []):
+                        extra_data = row.get("extra_data") or {}
 
-                        for row in existing.data:
+                        if extra_data.get("source") == self.SOURCE_NAME:
+                            delete_ids.append(row["id"])
 
-                            extra_data = row.get(
-                                "extra_data"
-                            ) or {}
+                    if delete_ids:
+                        logger.info(
+                            "[PSIC] Removing %s old %s records",
+                            len(delete_ids),
+                            category
+                        )
 
-                            if (
-                                extra_data.get("source")
-                                == self.SOURCE_NAME
-                            ):
-
-                                delete_ids.append(
-                                    row["id"]
-                                )
-
-                        if delete_ids:
-
-                            logger.info(
-                                "[PSIC] Removing %s old %s records",
-                                len(delete_ids),
-                                category
+                        for record_id in delete_ids:
+                            (
+                                db.table("opportunities")
+                                .delete()
+                                .eq("id", record_id)
+                                .execute()
                             )
 
-                            for record_id in delete_ids:
-
-                                (
-                                    db.table("opportunities")
-                                    .delete()
-                                    .eq(
-                                        "id",
-                                        record_id
-                                    )
-                                    .execute()
-                                )
-
                 except Exception as exc:
-
                     logger.warning(
                         "[PSIC] Could not clean old %s records: %s",
                         category,
                         exc
                     )
 
-            # ------------------------------------------------
-            # Insert fresh records
-            # ------------------------------------------------
+            response = (
+                db.table("opportunities")
+                .insert(db_records)
+                .execute()
+            )
 
-            if db_records:
+            inserted_count = len(
+                response.data if response.data else db_records
+            )
 
-                response = (
-                    db.table("opportunities")
-                    .insert(db_records)
-                    .execute()
-                )
-
-                inserted_count = len(
-                    response.data
-                    if response.data
-                    else db_records
-                )
-
-                logger.info(
-                    "[PSIC] Successfully inserted %s records",
-                    inserted_count
-                )
+            logger.info(
+                "[PSIC] Successfully inserted %s records",
+                inserted_count
+            )
 
         except Exception as exc:
-
             logger.exception(
                 "[PSIC] Database save failed: %s",
                 exc
             )
-
             raise
 
     # ========================================================
@@ -1223,20 +888,12 @@ class PSICScraper(BaseScraper):
     # ========================================================
 
     def run(self) -> List[Dict[str, Any]]:
-
         records = self.scrape()
 
         if records:
-
-            self.save_to_database(
-                records
-            )
-
+            self.save_to_database(records)
         else:
-
-            logger.warning(
-                "[PSIC] Nothing was scraped"
-            )
+            logger.warning("[PSIC] Nothing was scraped")
 
         return records
 
@@ -1246,9 +903,7 @@ class PSICScraper(BaseScraper):
 # ============================================================
 
 if __name__ == "__main__":
-
     scraper = PSICScraper()
-
     records = scraper.run()
 
     print()
@@ -1256,24 +911,15 @@ if __name__ == "__main__":
     print("PSIC SCRAPING RESULT")
     print("=" * 70)
 
-    for index, record in enumerate(
-        records,
-        start=1
-    ):
-
+    for index, record in enumerate(records, start=1):
         print()
         print(f"Record #{index}")
         print("-" * 70)
 
         for key, value in record.items():
-
-            print(
-                f"{key}: {value}"
-            )
+            print(f"{key}: {value}")
 
     print()
     print("=" * 70)
-    print(
-        f"TOTAL RECORDS: {len(records)}"
-    )
+    print(f"TOTAL RECORDS: {len(records)}")
     print("=" * 70)
