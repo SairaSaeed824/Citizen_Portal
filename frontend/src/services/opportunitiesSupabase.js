@@ -9,22 +9,9 @@ const API_BASE_URL = 'http://127.0.0.1:8000';
 /**
  * Fetch opportunities from FastAPI.
  *
- * Frontend
- *    ↓
- * FastAPI
- *    ↓
- * Supabase
+ * Frontend → FastAPI → Supabase
  *
- * Supported filters:
- * category, province, keyword, status, sortBy
- *
- * category:
- * all          -> all categories
- * job
- * scholarship
- * loan
- * training
- * internship
+ * Supported filters: category, province, keyword, status, sortBy
  */
 export async function getOpportunitiesSupabase(filters = {}) {
   const {
@@ -36,32 +23,24 @@ export async function getOpportunitiesSupabase(filters = {}) {
   } = filters;
 
   try {
-    /*
-     * Build query parameters
-     */
     const params = new URLSearchParams();
 
-    /*
-     * Only send category when a specific category
-     * has been selected.
-     *
-     * For "all", no category parameter is sent.
-     *
-     * Result:
-     * /api/opportunities
-     *
-     * Instead of:
-     * /api/opportunities?category=job
-     */
     if (category && category !== 'all') {
       params.append('category', category);
     }
 
-    const queryString = params.toString();
+    let url;
 
-    const url = queryString
-      ? `${API_BASE_URL}/api/opportunities?${queryString}`
-      : `${API_BASE_URL}/api/opportunities`;
+    if (keyword && keyword.trim() !== '') {
+      // Use the backend's dedicated search route instead of filtering client-side
+      params.append('q', keyword.trim());
+      url = `${API_BASE_URL}/api/opportunities/search?${params}`;
+    } else {
+      const queryString = params.toString();
+      url = queryString
+        ? `${API_BASE_URL}/api/opportunities?${queryString}`
+        : `${API_BASE_URL}/api/opportunities`;
+    }
 
     console.log('Fetching opportunities from:', url);
 
@@ -77,16 +56,6 @@ export async function getOpportunitiesSupabase(filters = {}) {
 
     console.log('FastAPI response:', result);
 
-    /*
-     * FastAPI response:
-     *
-     * {
-     *   success: true,
-     *   category: "all",
-     *   count: 100,
-     *   data: [...]
-     * }
-     */
     let results = result.data || [];
 
     /*
@@ -97,22 +66,14 @@ export async function getOpportunitiesSupabase(filters = {}) {
 
       return {
         ...item,
-
         id: item.id,
-
-        category:
-          item.category ||
-          extra.category ||
-          category ||
-          'job',
-
+        category: item.category || extra.category || category || 'job',
         title:
           item.title ||
           extra.title ||
           extra.job_title ||
           extra.name ||
           'Untitled Opportunity',
-
         organization:
           item.organization ||
           extra.organization ||
@@ -120,7 +81,6 @@ export async function getOpportunitiesSupabase(filters = {}) {
           extra.department ||
           extra.ministry ||
           '',
-
         description:
           item.description ||
           extra.description ||
@@ -129,159 +89,64 @@ export async function getOpportunitiesSupabase(filters = {}) {
           extra.overview ||
           extra.job_description ||
           '',
-
-        province:
-          item.province ||
-          extra.province ||
-          '',
-
-        location:
-          item.location ||
-          extra.location ||
-          '',
-
+        province: item.province || extra.province || '',
+        location: item.location || extra.location || '',
         closing_date:
           item.closing_date ||
           extra.closing_date ||
           extra.deadline ||
           extra.last_date ||
           '',
-
-        status:
-          item.status ||
-          extra.status ||
-          '',
-
-        url:
-          item.url ||
-          extra.url ||
-          extra.link ||
-          extra.apply_url ||
-          '',
-
-        /*
-         * Keep the complete extra_data object.
-         *
-         * This is important because your frontend
-         * dynamically displays fields from extra_data.
-         */
+        status: item.status || extra.status || '',
+        url: item.url || extra.url || extra.link || extra.apply_url || '',
         extra_data: extra,
       };
     });
 
-
     /*
-     * Province filter
+     * Province filter (still client-side — backend has no province route yet)
      */
     if (province && province !== 'all') {
       const target = province.toLowerCase().trim();
 
       results = results.filter((item) => {
-        const prov = (
-          item.province ||
-          item.location ||
-          ''
-        ).toLowerCase().trim();
+        const prov = (item.province || item.location || '').toLowerCase().trim();
 
-        /*
-         * If All Pakistan is selected,
-         * only match All Pakistan.
-         */
         if (target === 'all pakistan') {
           return prov === 'all pakistan';
         }
 
-        /*
-         * Specific province/location.
-         *
-         * Also keep All Pakistan opportunities.
-         */
-        return (
-          prov === target ||
-          prov.includes(target) ||
-          prov === 'all pakistan'
-        );
+        return prov === target || prov.includes(target) || prov === 'all pakistan';
       });
     }
-
 
     /*
      * Status filter
      */
     if (status && status !== 'all') {
-      results = results.filter((item) => {
-        return (
-          item.status &&
-          item.status.toLowerCase() ===
-            status.toLowerCase()
-        );
-      });
+      results = results.filter(
+        (item) => item.status && item.status.toLowerCase() === status.toLowerCase()
+      );
     }
-
-
-    /*
-     * Keyword search
-     */
-    if (keyword && keyword.trim() !== '') {
-      const term = keyword.toLowerCase().trim();
-
-      results = results.filter((item) => {
-        const searchable = [
-          item.title,
-          item.organization,
-          item.description,
-          item.province,
-          item.location,
-          item.category,
-          item.status,
-          item.closing_date,
-          JSON.stringify(item.extra_data || {}),
-        ]
-          .join(' ')
-          .toLowerCase();
-
-        return searchable.includes(term);
-      });
-    }
-
 
     /*
      * Sorting
      */
     if (sortBy === 'closing_soon') {
-      results.sort((a, b) => {
-        return (
-          new Date(
-            a.closing_date || '9999-12-31'
-          ) -
-          new Date(
-            b.closing_date || '9999-12-31'
-          )
-        );
-      });
+      results.sort(
+        (a, b) =>
+          new Date(a.closing_date || '9999-12-31') -
+          new Date(b.closing_date || '9999-12-31')
+      );
+    } else if (sortBy === 'title') {
+      results.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
     }
 
-    else if (sortBy === 'title') {
-      results.sort((a, b) => {
-        return (a.title || '').localeCompare(
-          b.title || ''
-        );
-      });
-    }
-
-
-    console.log(
-      `Total opportunities after frontend filters: ${results.length}`
-    );
+    console.log(`Total opportunities after frontend filters: ${results.length}`);
 
     return results;
-
   } catch (error) {
-    console.error(
-      'Error fetching opportunities from FastAPI:',
-      error
-    );
-
+    console.error('Error fetching opportunities from FastAPI:', error);
     throw error;
   }
 }
@@ -289,14 +154,11 @@ export async function getOpportunitiesSupabase(filters = {}) {
 
 /**
  * Fetch a single opportunity by ID.
- *
- * Currently this still uses Supabase directly.
+ * Still uses Supabase directly (no dedicated need to change — backend route also exists,
+ * swap this later if you want everything to go through FastAPI).
  */
 export async function getOpportunityByIdSupabase(id) {
-  const {
-    data,
-    error,
-  } = await supabase
+  const { data, error } = await supabase
     .from('opportunities')
     .select('*')
     .eq('id', Number(id))
@@ -311,36 +173,30 @@ export async function getOpportunityByIdSupabase(id) {
 
 
 /**
- * Search opportunities.
- *
- * Search currently goes through FastAPI.
+ * Search opportunities — goes through FastAPI's /search route.
+ * category now defaults to 'all' instead of being hardcoded to 'job'.
  */
-export async function searchOpportunitiesSupabase(keyword) {
-  return getOpportunitiesSupabase({
-    keyword,
-    category: 'job',
-  });
+export async function searchOpportunitiesSupabase(keyword, category = 'all') {
+  return getOpportunitiesSupabase({ keyword, category });
 }
 
 
 /**
- * Submit an opportunity.
- *
- * This still uses Supabase directly for now.
+ * Submit an opportunity — now goes through the FastAPI backend route,
+ * which writes to the correct 'submitted_opportunities' table and sets status='pending'.
  */
 export async function submitOpportunitySupabase(payload) {
-  const {
-    data,
-    error,
-  } = await supabase
-    .from('submitted_jobs')
-    .insert([payload])
-    .select()
-    .single();
+  const response = await fetch(`${API_BASE_URL}/api/submitted-opportunities`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 
-  if (error) {
-    throw error;
+  if (!response.ok) {
+    throw new Error(`Submission failed: ${response.status} ${response.statusText}`);
   }
+
+  const data = await response.json();
 
   return {
     success: true,
@@ -352,14 +208,11 @@ export async function submitOpportunitySupabase(payload) {
 
 /**
  * Get unique provinces.
- *
- * Still using Supabase directly for now.
+ * Still using Supabase directly for now — note: 'province' column doesn't exist
+ * in the real schema (it's inside extra_data), so this currently returns an empty array.
  */
 export async function getProvincesSupabase() {
-  const {
-    data,
-    error,
-  } = await supabase
+  const { data, error } = await supabase
     .from('opportunities')
     .select('province')
     .neq('province', null);
@@ -368,9 +221,7 @@ export async function getProvincesSupabase() {
     throw error;
   }
 
-  const set = new Set(
-    data.map((row) => row.province)
-  );
+  const set = new Set(data.map((row) => row.province));
 
   return Array.from(set).sort();
 }
@@ -378,16 +229,10 @@ export async function getProvincesSupabase() {
 
 /**
  * Get category statistics.
- *
  * Still using Supabase directly for now.
  */
 export async function getCategoryStatsSupabase() {
-  const {
-    data,
-    error,
-  } = await supabase
-    .from('opportunities')
-    .select('category');
+  const { data, error } = await supabase.from('opportunities').select('category');
 
   if (error) {
     throw error;
@@ -402,9 +247,7 @@ export async function getCategoryStatsSupabase() {
   };
 
   data.forEach((item) => {
-    const category =
-      item.category?.toLowerCase();
-
+    const category = item.category?.toLowerCase();
     if (counts[category] !== undefined) {
       counts[category]++;
     }
@@ -413,52 +256,11 @@ export async function getCategoryStatsSupabase() {
   const total = data.length;
 
   return [
-    {
-      key: 'all',
-      name: 'All Opportunities',
-      nameUrdu: 'تمام مواقع',
-      count: total,
-      icon: 'LayoutGrid',
-    },
-
-    {
-      key: 'job',
-      name: 'Jobs',
-      nameUrdu: 'ملازمتیں',
-      count: counts.job,
-      icon: 'Briefcase',
-    },
-
-    {
-      key: 'scholarship',
-      name: 'Scholarships',
-      nameUrdu: 'وظائف',
-      count: counts.scholarship,
-      icon: 'GraduationCap',
-    },
-
-    {
-      key: 'loan',
-      name: 'Loans',
-      nameUrdu: 'قرضے',
-      count: counts.loan,
-      icon: 'Landmark',
-    },
-
-    {
-      key: 'training',
-      name: 'Training',
-      nameUrdu: 'تربیت',
-      count: counts.training,
-      icon: 'Sparkles',
-    },
-
-    {
-      key: 'internship',
-      name: 'Internships',
-      nameUrdu: 'انٹرن شپس',
-      count: counts.internship,
-      icon: 'Building2',
-    },
+    { key: 'all', name: 'All Opportunities', nameUrdu: 'تمام مواقع', count: total, icon: 'LayoutGrid' },
+    { key: 'job', name: 'Jobs', nameUrdu: 'ملازمتیں', count: counts.job, icon: 'Briefcase' },
+    { key: 'scholarship', name: 'Scholarships', nameUrdu: 'وظائف', count: counts.scholarship, icon: 'GraduationCap' },
+    { key: 'loan', name: 'Loans', nameUrdu: 'قرضے', count: counts.loan, icon: 'Landmark' },
+    { key: 'training', name: 'Training', nameUrdu: 'تربیت', count: counts.training, icon: 'Sparkles' },
+    { key: 'internship', name: 'Internships', nameUrdu: 'انٹرن شپس', count: counts.internship, icon: 'Building2' },
   ];
 }

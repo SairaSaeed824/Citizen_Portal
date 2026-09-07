@@ -141,7 +141,7 @@ export async function askChatbot(question) {
 
   try {
     liveOpps = await getOpportunitiesSupabase({
-      category: 'job',
+      
     });
   } catch (err) {
     console.error(

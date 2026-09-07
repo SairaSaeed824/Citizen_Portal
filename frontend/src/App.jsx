@@ -56,7 +56,7 @@ export default function App() {
       <DisclaimerBanner 
         lang={lang} 
         onOpenGuide={() => {
-          setCurrentScreen('guide');
+        setCurrentScreen('guide');
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
       />
