@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { 
-  MapPin, 
-  Calendar, 
-  ExternalLink, 
-  Briefcase, 
-  GraduationCap, 
-  Landmark, 
-  Sparkles, 
+import {
+  MapPin,
+  Calendar,
+  ExternalLink,
+  Briefcase,
+  GraduationCap,
+  Landmark,
+  Sparkles,
   Building2,
+  FolderKanban,
   Clock,
   Coins,
   BookOpen,
@@ -53,6 +54,13 @@ const categoryConfig = {
     badgeText: 'text-sky-800 dark:text-sky-300',
     badgeBorder: 'border-sky-200 dark:border-sky-800/80',
     iconColor: 'text-sky-600 dark:text-sky-400'
+  },
+  project: {
+    icon: FolderKanban,
+    badgeBg: 'bg-orange-50 dark:bg-orange-950/60',
+    badgeText: 'text-orange-800 dark:text-orange-300',
+    badgeBorder: 'border-orange-200 dark:border-orange-800/80',
+    iconColor: 'text-orange-600 dark:text-orange-400'
   }
 };
 
@@ -66,25 +74,17 @@ function getInitialBookmarkState(id) {
   }
 }
 
-export default function OpportunityCard({
-  opportunity,
-  onSelect,
-  onBookmarkToggle,
-  t,
-  lang
-}) {
+export default function OpportunityCard({ opportunity, onSelect, onBookmarkToggle, t, lang }) {
   const isUrdu = lang === 'ur';
-
   const { id, category = 'job', extra_data = {} } = opportunity;
-  const {
-    title,
-    organization,
-    province,
-    closing_date,
-    apply_link
-  } = extra_data;
 
-  const catKey = category?.toLowerCase();
+  const title = opportunity.title || extra_data.title || extra_data.name || 'Untitled Opportunity';
+  const organization = opportunity.organization || extra_data.organization || extra_data.company || extra_data.department || '';
+  const province = opportunity.province || extra_data.province || extra_data.location || '';
+  const closing_date = opportunity.closing_date || extra_data.closing_date || extra_data.deadline || extra_data.last_date || '';
+  const apply_link = opportunity.apply_link || extra_data.apply_link || opportunity.url || extra_data.url || extra_data.link || extra_data.apply_url || '';
+
+  const catKey = category?.toLowerCase()?.trim();
   const config = categoryConfig[catKey] || categoryConfig.job;
   const CatIcon = config.icon;
 
@@ -94,32 +94,24 @@ export default function OpportunityCard({
     e.stopPropagation();
     try {
       const savedBookmarks = JSON.parse(localStorage.getItem('portal_bookmarks') || '[]');
-      let updatedBookmarks;
+      const updatedBookmarks = isBookmarked
+        ? savedBookmarks.filter(itemIds => itemIds !== id)
+        : [...savedBookmarks, id];
 
-      if (isBookmarked) {
-        updatedBookmarks = savedBookmarks.filter(itemIds => itemIds !== id);
-        setIsBookmarked(false);
-      } else {
-        updatedBookmarks = [...savedBookmarks, id];
-        setIsBookmarked(true);
-      }
-
+      setIsBookmarked(!isBookmarked);
       localStorage.setItem('portal_bookmarks', JSON.stringify(updatedBookmarks));
       window.dispatchEvent(new Event('bookmarksUpdated'));
 
-      if (onBookmarkToggle) {
-        onBookmarkToggle(id);
-      }
+      if (onBookmarkToggle) onBookmarkToggle(id);
     } catch (err) {
       console.error('Failed to update bookmark in localStorage', err);
     }
   };
 
-  // Deadline calculations — three distinct states
   let daysRemaining = null;
-  let isClosingSoon = false;   // within 7 days (but not today)
-  let isExpiringToday = false; // deadline is today — most urgent
-  let isExpired = false;       // deadline already passed
+  let isClosingSoon = false;
+  let isExpiringToday = false;
+  let isExpired = false;
 
   if (closing_date) {
     const today = new Date();
@@ -129,33 +121,30 @@ export default function OpportunityCard({
     const diffTime = deadline - today;
     daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    if (daysRemaining < 0) {
-      isExpired = true;
-    } else if (daysRemaining === 0) {
-      isExpiringToday = true;
-    } else if (daysRemaining <= 7) {
-      isClosingSoon = true;
-    }
+    if (daysRemaining < 0) isExpired = true;
+    else if (daysRemaining === 0) isExpiringToday = true;
+    else if (daysRemaining <= 7) isClosingSoon = true;
   }
 
   const getHighlightInfo = () => {
-    if (extra_data.stipend) {
-      return { icon: Coins, text: extra_data.stipend };
-    }
+    if (extra_data.stipend) return { icon: Coins, text: extra_data.stipend };
     if (extra_data.loan_amount_max) {
       const max = `Max PKR ${(extra_data.loan_amount_max / 100000).toFixed(0)} Lakhs`;
       return { icon: Landmark, text: max };
     }
     if (extra_data.degree_level) {
-      const levels = Array.isArray(extra_data.degree_level) ? extra_data.degree_level.join(', ') : extra_data.degree_level;
+      const levels = Array.isArray(extra_data.degree_level)
+        ? extra_data.degree_level.join(', ')
+        : extra_data.degree_level;
       return { icon: BookOpen, text: levels };
     }
     if (extra_data.vacancies) {
-      return { icon: UserCheck, text: `${extra_data.vacancies} ${extra_data.vacancies === 1 ? 'Vacancy' : 'Vacancies'}` };
+      return {
+        icon: UserCheck,
+        text: `${extra_data.vacancies} ${extra_data.vacancies === 1 ? 'Vacancy' : 'Vacancies'}`
+      };
     }
-    if (extra_data.duration) {
-      return { icon: Clock, text: extra_data.duration };
-    }
+    if (extra_data.duration) return { icon: Clock, text: extra_data.duration };
     return null;
   };
 
@@ -164,17 +153,15 @@ export default function OpportunityCard({
   const handleApplyClick = (e) => {
     e.stopPropagation();
     if (isExpired) return;
-    if (apply_link) {
-      window.open(apply_link, '_blank', 'noopener,noreferrer');
-    }
+    if (apply_link) window.open(apply_link, '_blank', 'noopener,noreferrer');
   };
 
   return (
-    <div 
+    <div
       onClick={() => onSelect(opportunity)}
       className={`bg-white dark:bg-slate-900 rounded-2xl border p-4.5 shadow-xs pak-card cursor-pointer flex flex-col justify-between group transition-all duration-200 relative ${
-        isExpired 
-          ? 'border-slate-200 dark:border-slate-800 grayscale opacity-60 hover:opacity-80' 
+        isExpired
+          ? 'border-slate-200 dark:border-slate-800 grayscale opacity-60 hover:opacity-80'
           : isExpiringToday
           ? 'border-red-400 dark:border-red-600 ring-2 ring-red-200 dark:ring-red-900/60 animate-pulse-slow'
           : 'border-slate-200/90 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-emerald-600'
@@ -185,9 +172,7 @@ export default function OpportunityCard({
           0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
           50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
         }
-        .animate-pulse-slow {
-          animation: pulse-slow-border 1.8s ease-in-out infinite;
-        }
+        .animate-pulse-slow { animation: pulse-slow-border 1.8s ease-in-out infinite; }
         @keyframes alarm-shake {
           0%, 100% { transform: rotate(0deg); }
           20% { transform: rotate(-12deg); }
@@ -195,10 +180,7 @@ export default function OpportunityCard({
           60% { transform: rotate(-8deg); }
           80% { transform: rotate(6deg); }
         }
-        .alarm-shake {
-          animation: alarm-shake 0.7s ease-in-out infinite;
-          transform-origin: top center;
-        }
+        .alarm-shake { animation: alarm-shake 0.7s ease-in-out infinite; transform-origin: top center; }
       `}</style>
 
       <div>
@@ -236,8 +218,8 @@ export default function OpportunityCard({
             onClick={handleBookmarkToggle}
             aria-label="Bookmark opportunity"
             className={`p-1.5 rounded-full border transition-all duration-200 cursor-pointer ${
-              isBookmarked 
-                ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 scale-110' 
+              isBookmarked
+                ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 scale-110'
                 : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400'
             }`}
           >
@@ -246,8 +228,8 @@ export default function OpportunityCard({
         </div>
 
         <h4 className={`text-sm font-bold line-clamp-2 transition-colors leading-snug mb-1.5 ${
-          isExpired 
-            ? 'text-slate-500 dark:text-slate-500' 
+          isExpired
+            ? 'text-slate-500 dark:text-slate-500'
             : 'text-slate-900 dark:text-white group-hover:text-[#00401A] dark:group-hover:text-emerald-400'
         } ${isUrdu ? 'urdu-text' : ''}`}>
           {title}
@@ -260,7 +242,7 @@ export default function OpportunityCard({
         <div className="space-y-1.5 text-[11px] text-slate-600 dark:text-slate-300 mb-4">
           {province && (
             <div className="flex items-center gap-1.5">
-              <MapPin className={`w-3.5 h-3.5 shrink-0 ${isExpired ? 'text-slate-400 dark:text-slate-600' : 'text-slate-400 dark:text-slate-500'}`} />
+              <MapPin className="w-3.5 h-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
               <span className="truncate">{province}</span>
             </div>
           )}
