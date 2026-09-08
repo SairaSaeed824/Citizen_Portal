@@ -5,7 +5,6 @@ import { supabase } from './supabaseClient';
  */
 const API_BASE_URL = 'http://127.0.0.1:8000';
 
-
 /**
  * Fetch opportunities from FastAPI.
  *
@@ -32,7 +31,6 @@ export async function getOpportunitiesSupabase(filters = {}) {
     let url;
 
     if (keyword && keyword.trim() !== '') {
-      // Use the backend's dedicated search route instead of filtering client-side
       params.append('q', keyword.trim());
       url = `${API_BASE_URL}/api/opportunities/search?${params}`;
     } else {
@@ -53,14 +51,10 @@ export async function getOpportunitiesSupabase(filters = {}) {
     }
 
     const result = await response.json();
-
     console.log('FastAPI response:', result);
 
     let results = result.data || [];
 
-    /*
-     * Normalize opportunity data
-     */
     results = results.map((item) => {
       const extra = item.extra_data || {};
 
@@ -103,9 +97,6 @@ export async function getOpportunitiesSupabase(filters = {}) {
       };
     });
 
-    /*
-     * Province filter (still client-side — backend has no province route yet)
-     */
     if (province && province !== 'all') {
       const target = province.toLowerCase().trim();
 
@@ -120,18 +111,12 @@ export async function getOpportunitiesSupabase(filters = {}) {
       });
     }
 
-    /*
-     * Status filter
-     */
     if (status && status !== 'all') {
       results = results.filter(
         (item) => item.status && item.status.toLowerCase() === status.toLowerCase()
       );
     }
 
-    /*
-     * Sorting
-     */
     if (sortBy === 'closing_soon') {
       results.sort(
         (a, b) =>
@@ -151,12 +136,6 @@ export async function getOpportunitiesSupabase(filters = {}) {
   }
 }
 
-
-/**
- * Fetch a single opportunity by ID.
- * Still uses Supabase directly (no dedicated need to change — backend route also exists,
- * swap this later if you want everything to go through FastAPI).
- */
 export async function getOpportunityByIdSupabase(id) {
   const { data, error } = await supabase
     .from('opportunities')
@@ -171,20 +150,10 @@ export async function getOpportunityByIdSupabase(id) {
   return data || null;
 }
 
-
-/**
- * Search opportunities — goes through FastAPI's /search route.
- * category now defaults to 'all' instead of being hardcoded to 'job'.
- */
 export async function searchOpportunitiesSupabase(keyword, category = 'all') {
   return getOpportunitiesSupabase({ keyword, category });
 }
 
-
-/**
- * Submit an opportunity — now goes through the FastAPI backend route,
- * which writes to the correct 'submitted_opportunities' table and sets status='pending'.
- */
 export async function submitOpportunitySupabase(payload) {
   const response = await fetch(`${API_BASE_URL}/api/submitted-opportunities`, {
     method: 'POST',
@@ -205,12 +174,6 @@ export async function submitOpportunitySupabase(payload) {
   };
 }
 
-
-/**
- * Get unique provinces.
- * Still using Supabase directly for now — note: 'province' column doesn't exist
- * in the real schema (it's inside extra_data), so this currently returns an empty array.
- */
 export async function getProvincesSupabase() {
   const { data, error } = await supabase
     .from('opportunities')
@@ -226,10 +189,9 @@ export async function getProvincesSupabase() {
   return Array.from(set).sort();
 }
 
-
 /**
  * Get category statistics.
- * Still using Supabase directly for now.
+ * Includes all supported opportunity categories, including projects.
  */
 export async function getCategoryStatsSupabase() {
   const { data, error } = await supabase.from('opportunities').select('category');
@@ -244,10 +206,12 @@ export async function getCategoryStatsSupabase() {
     loan: 0,
     training: 0,
     internship: 0,
+    project: 0,
   };
 
   data.forEach((item) => {
-    const category = item.category?.toLowerCase();
+    const category = item.category?.toLowerCase()?.trim();
+
     if (counts[category] !== undefined) {
       counts[category]++;
     }
@@ -256,11 +220,54 @@ export async function getCategoryStatsSupabase() {
   const total = data.length;
 
   return [
-    { key: 'all', name: 'All Opportunities', nameUrdu: 'تمام مواقع', count: total, icon: 'LayoutGrid' },
-    { key: 'job', name: 'Jobs', nameUrdu: 'ملازمتیں', count: counts.job, icon: 'Briefcase' },
-    { key: 'scholarship', name: 'Scholarships', nameUrdu: 'وظائف', count: counts.scholarship, icon: 'GraduationCap' },
-    { key: 'loan', name: 'Loans', nameUrdu: 'قرضے', count: counts.loan, icon: 'Landmark' },
-    { key: 'training', name: 'Training', nameUrdu: 'تربیت', count: counts.training, icon: 'Sparkles' },
-    { key: 'internship', name: 'Internships', nameUrdu: 'انٹرن شپس', count: counts.internship, icon: 'Building2' },
+    {
+      key: 'all',
+      name: 'All Opportunities',
+      nameUrdu: 'تمام مواقع',
+      count: total,
+      icon: 'LayoutGrid'
+    },
+    {
+      key: 'job',
+      name: 'Jobs',
+      nameUrdu: 'ملازمتیں',
+      count: counts.job,
+      icon: 'Briefcase'
+    },
+    {
+      key: 'scholarship',
+      name: 'Scholarships',
+      nameUrdu: 'وظائف',
+      count: counts.scholarship,
+      icon: 'GraduationCap'
+    },
+    {
+      key: 'loan',
+      name: 'Loans',
+      nameUrdu: 'قرضے',
+      count: counts.loan,
+      icon: 'Landmark'
+    },
+    {
+      key: 'training',
+      name: 'Training',
+      nameUrdu: 'تربیت',
+      count: counts.training,
+      icon: 'Sparkles'
+    },
+    {
+      key: 'internship',
+      name: 'Internships',
+      nameUrdu: 'انٹرن شپس',
+      count: counts.internship,
+      icon: 'Building2'
+    },
+    {
+      key: 'project',
+      name: 'Projects',
+      nameUrdu: 'پروجیکٹس',
+      count: counts.project,
+      icon: 'FolderKanban'
+    },
   ];
 }
