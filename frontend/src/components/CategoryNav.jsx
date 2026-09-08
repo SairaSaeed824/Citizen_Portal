@@ -1,11 +1,12 @@
 import React from 'react';
-import { 
-  Compass, 
-  Briefcase, 
-  GraduationCap, 
-  Landmark, 
-  Sparkles, 
-  Building2 
+import {
+  Compass,
+  Briefcase,
+  GraduationCap,
+  Landmark,
+  Sparkles,
+  Building2,
+  FolderKanban
 } from 'lucide-react';
 
 const categoryIcons = {
@@ -14,7 +15,8 @@ const categoryIcons = {
   scholarship: GraduationCap,
   loan: Landmark,
   training: Sparkles,
-  internship: Building2
+  internship: Building2,
+  project: FolderKanban
 };
 
 const categoryNames = {
@@ -24,7 +26,8 @@ const categoryNames = {
     scholarship: 'Scholarships',
     loan: 'Loans',
     training: 'Training',
-    internship: 'Internships'
+    internship: 'Internships',
+    project: 'Projects'
   },
   ur: {
     all: 'تمام مواقع',
@@ -32,7 +35,8 @@ const categoryNames = {
     scholarship: 'وظائف',
     loan: 'قرضے',
     training: 'ٹریننگ',
-    internship: 'انٹرن شپس'
+    internship: 'انٹرن شپس',
+    project: 'پروجیکٹس'
   }
 };
 
@@ -49,8 +53,6 @@ export default function CategoryNav({
   return (
     <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors shadow-2xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Horizontal Category Nav with Smooth Hover Lift */}
         <div className="flex items-center gap-2 overflow-x-auto py-3.5 no-scrollbar">
           {categoryStats.map((item) => {
             const Icon = categoryIcons[item.key] || Compass;
@@ -70,8 +72,6 @@ export default function CategoryNav({
               >
                 <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-emerald-300' : 'text-slate-400'}`} />
                 <span>{labelText}</span>
-
-                {/* Count Badge */}
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold transition-colors ${
                   isSelected
                     ? 'bg-white/25 text-white'
@@ -83,9 +83,7 @@ export default function CategoryNav({
             );
           })}
         </div>
-
       </div>
     </div>
   );
 }
-
