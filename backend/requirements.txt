@@ -9,3 +9,5 @@ python-multipart==0.0.9
 beautifulsoup4==4.12.3
 requests==2.31.0
 APScheduler==3.10.4
+google-genai>=1.0.0
+qdrant-client>=1.14.0
