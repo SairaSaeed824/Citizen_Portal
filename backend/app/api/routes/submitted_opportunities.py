@@ -10,7 +10,10 @@ router = APIRouter(prefix="/api/submitted-opportunities", tags=["Submitted Oppor
 @router.post("")
 def submit_opportunity(payload: OpportunitySubmission):
     try:
-        return {"success": True, "data": create_submission(payload.name, payload.category, payload.detail)}
+        data = payload.model_dump()
+        name = data.pop("name")
+        category = data.pop("category")
+        return {"success": True, "data": create_submission(name, category, data)}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
