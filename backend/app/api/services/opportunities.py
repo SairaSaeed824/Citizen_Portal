@@ -1,5 +1,19 @@
 from typing import Any, Dict, List
+from datetime import date, timedelta
 from app.core.database import get_db
+
+
+def _value(item: Dict[str, Any], *keys: str) -> str:
+    extra = item.get("extra_data") or {}
+    for key in keys:
+        value = item.get(key) or extra.get(key)
+        if value not in (None, ""):
+            return str(value).strip()
+    return ""
+
+
+def _closing_date(item: Dict[str, Any]) -> str:
+    return _value(item, "closing_date", "deadline", "last_date")
 
 
 def get_opportunities(
@@ -10,40 +24,42 @@ def get_opportunities(
     deadline: str = "all",
     sort_by: str = "default",
 ):
-    """Fetch opportunities with flexible server-side filters."""
+    """Fetch opportunities and filter flexible scraped attributes safely.
+
+    The project stores many attributes inside extra_data, so filters are
+    deliberately applied after retrieval instead of assuming optional DB
+    columns such as province/location/organization exist.
+    """
     db = get_db()
     query = db.table("opportunities").select("*")
-
     if category and category.lower() != "all":
         query = query.eq("category", category.lower().strip())
 
+    data = query.execute().data or []
+
     if province and province.lower() != "all":
-        query = query.ilike("province", f"%{province.strip()}%")
+        target = province.lower().strip()
+        data = [
+            item for item in data
+            if target in _value(item, "province", "location").lower()
+            or "all pakistan" in _value(item, "province", "location").lower()
+        ]
 
-    if location and location.strip():
-        query = query.ilike("location", f"%{location.strip()}%")
+    if location.strip():
+        target = location.lower().strip()
+        data = [item for item in data if target in _value(item, "location", "city", "district").lower()]
 
-    if organization and organization.strip():
-        query = query.ilike("organization", f"%{organization.strip()}%")
+    if organization.strip():
+        target = organization.lower().strip()
+        data = [item for item in data if target in _value(item, "organization", "company", "department", "ministry", "source").lower()]
 
-    response = query.execute()
-    data = response.data or []
-
-    # Deadline filtering is done in Python because scraped records may store
-    # deadline/closing_date in different places inside extra_data.
-    if deadline and deadline != "all":
-        from datetime import date, timedelta
+    if deadline != "all":
         today = date.today()
-
-        def closing_date(item):
-            extra = item.get("extra_data") or {}
-            return item.get("closing_date") or extra.get("closing_date") or extra.get("deadline") or extra.get("last_date")
-
         parsed = []
         for item in data:
-            raw = closing_date(item)
+            raw = _closing_date(item)
             try:
-                parsed.append((item, date.fromisoformat(str(raw)[:10])))
+                parsed.append((item, date.fromisoformat(raw[:10])))
             except (TypeError, ValueError):
                 continue
 
@@ -57,14 +73,11 @@ def get_opportunities(
             data = [item for item, d in parsed if today <= d <= end]
 
     if sort_by == "title":
-        data.sort(key=lambda x: str(x.get("title") or "").lower())
+        data.sort(key=lambda x: _value(x, "title", "name", "job_title").lower())
     elif sort_by == "closing_soon":
-        from datetime import date
-        data.sort(key=lambda x: str(
-            x.get("closing_date") or (x.get("extra_data") or {}).get("closing_date") or "9999-12-31"
-        )[:10])
+        data.sort(key=lambda x: _closing_date(x)[:10] or "9999-12-31")
     elif sort_by == "newest":
-        data.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
+        data.sort(key=lambda x: _value(x, "created_at", "posted_date", "scraped_at"), reverse=True)
 
     return data
 
@@ -78,15 +91,15 @@ def get_opportunity_by_id(opportunity_id: int) -> Dict[str, Any] | None:
 
 
 def search_opportunities(query: str, category: str = "all") -> List[Dict[str, Any]]:
-    """Search opportunity titles first; this is the public directory search."""
+    """Search by opportunity title/name, including values stored in extra_data."""
     db = get_db()
     db_query = db.table("opportunities").select("*")
-
     if category and category != "all":
         db_query = db_query.eq("category", category.lower().strip())
 
-    # User-facing search is intentionally title-focused rather than matching
-    # arbitrary scraped text, which produces noisy results.
-    db_query = db_query.ilike("title", f"%{query.strip()}%")
-    result = db_query.execute()
-    return result.data or []
+    data = db_query.execute().data or []
+    target = query.strip().lower()
+    return [
+        item for item in data
+        if target in _value(item, "title", "name", "job_title").lower()
+    ]
