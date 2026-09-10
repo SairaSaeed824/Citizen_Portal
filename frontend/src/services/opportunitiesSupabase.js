@@ -2,6 +2,13 @@ import { supabase } from './supabaseClient';
 
 const API_BASE_URL = 'http://127.0.0.1:8000';
 
+const normalize = (value) => String(value ?? '').trim().toLowerCase();
+
+const getProvinceValue = (row) => {
+  const extra = row?.extra_data || {};
+  return row?.province || extra.province || extra.Province || extra.PROVINCE || extra.region || extra.region_name || extra.province_name || '';
+};
+
 export async function getOpportunitiesSupabase(filters = {}) {
   const { category = 'all', province = 'all', location = '', organization = '', deadline = 'all', keyword = '', status = 'all', sortBy = 'default' } = filters;
   const params = new URLSearchParams();
@@ -35,8 +42,8 @@ export async function getOpportunitiesSupabase(filters = {}) {
       title: item.title || extra.title || extra.job_title || extra.name || 'Untitled Opportunity',
       organization: item.organization || extra.organization || extra.company || extra.department || extra.ministry || '',
       description: item.description || extra.description || extra.details || extra.program_overview || extra.overview || extra.job_description || '',
-      province: item.province || extra.province || '',
-      location: item.location || extra.location || '',
+      province: getProvinceValue(item),
+      location: item.location || extra.location || extra.city || extra.district || '',
       closing_date: item.closing_date || extra.closing_date || extra.deadline || extra.last_date || '',
       status: item.status || extra.status || '',
       url: item.url || extra.url || extra.link || extra.apply_url || '',
@@ -44,7 +51,21 @@ export async function getOpportunitiesSupabase(filters = {}) {
     };
   });
 
-  if (status !== 'all') results = results.filter((item) => (item.status || '').toLowerCase() === status.toLowerCase());
+  // Apply a resilient province match on the normalized frontend data too. This handles
+  // scraped records where province is stored only inside extra_data or with different key casing.
+  if (province !== 'all') {
+    const targetProvince = normalize(province);
+    results = results.filter((item) => normalize(item.province) === targetProvince);
+  }
+
+  // The backend search endpoint may search multiple fields. Keep the UI focused on
+  // opportunity titles when the user is using the title search box.
+  if (keyword.trim()) {
+    const q = normalize(keyword);
+    results = results.filter((item) => normalize(item.title).includes(q));
+  }
+
+  if (status !== 'all') results = results.filter((item) => normalize(item.status) === normalize(status));
   return results;
 }
 
@@ -65,14 +86,30 @@ export async function submitOpportunitySupabase(payload) {
 }
 
 export async function getProvincesSupabase() {
-  // Province is often stored inside extra_data by scrapers.
-  const { data, error } = await supabase.from('opportunities').select('*');
+  // Province values are often stored inside extra_data by scrapers. Read all records
+  // and support the common province/region key variants used by scraped sources.
+  const { data, error } = await supabase.from('opportunities').select('province, extra_data');
   if (error) throw error;
-  const values = data.flatMap((row) => {
-    const extra = row.extra_data || {};
-    return [row.province, extra.province].filter(Boolean);
-  });
-  return Array.from(new Set(values.map((v) => String(v).trim()).filter(Boolean))).sort();
+
+  const values = data.flatMap((row) => [getProvinceValue(row)]).filter(Boolean);
+  const unique = Array.from(new Set(values.map((v) => String(v).trim()).filter(Boolean)));
+
+  // Keep the standard Pakistan regions together and then sort the remaining values.
+  const preferredOrder = [
+    'Punjab',
+    'Sindh',
+    'Khyber Pakhtunkhwa',
+    'Khyber Pakhtunkhwa (KPK)',
+    'Balochistan',
+    'Islamabad Capital Territory',
+    'Islamabad',
+    'Gilgit-Baltistan',
+    'Azad Jammu and Kashmir',
+    'AJK',
+  ];
+  const preferred = preferredOrder.filter((name) => unique.some((v) => normalize(v) === normalize(name)));
+  const remaining = unique.filter((v) => !preferred.some((p) => normalize(p) === normalize(v))).sort((a, b) => a.localeCompare(b));
+  return [...preferred, ...remaining];
 }
 
 export async function getCategoryStatsSupabase() {
