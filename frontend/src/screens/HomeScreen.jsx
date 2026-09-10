@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import HeroSection from '../components/HeroSection';
 import CivicStatsDashboard from '../components/CivicStatsDashboard';
 import CategoryNav from '../components/CategoryNav';
@@ -7,7 +7,7 @@ import SmallBanners from '../components/SmallBanners';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Button } from '../components/ui/button';
-import { Search, RotateCcw, FolderOpen, Heart, Trash2, Clock, MapPin, CalendarDays, Sparkles, SlidersHorizontal, X, Loader2 } from 'lucide-react';
+import { Search, RotateCcw, FolderOpen, Heart, Trash2, Clock, MapPin, CalendarDays, Sparkles, SlidersHorizontal, X } from 'lucide-react';
 import { getOpportunities, getProvinces, getCategoryStats } from '../services/opportunitiesService';
 
 const PAGE_SIZE = 50;
@@ -42,6 +42,7 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
   const [sortBy, setSortBy] = useState('default');
   const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
   const [showExpiredOnly, setShowExpiredOnly] = useState(false);
+  const loadMoreRef = useRef(null);
 
   useEffect(() => {
     Promise.all([getProvinces(), getCategoryStats()])
@@ -100,6 +101,23 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
       console.error('Error loading more opportunities:', error);
     } finally { setLoadingMore(false); }
   };
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNext && !loadingMore && !loading) {
+          loadMore();
+        }
+      },
+      { rootMargin: '400px 0px', threshold: 0 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasNext, loadingMore, loading, page, keyword, selectedCategory, selectedProvince, location, deadline, sortBy, showBookmarksOnly, showExpiredOnly]);
 
   const filteredProvinces = useMemo(() => {
     const q = provinceQuery.trim().toLowerCase();
@@ -165,8 +183,10 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
         {!loading && opportunities.length === 0 && <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-10 text-center max-w-md mx-auto"><FolderOpen className="w-12 h-12 mx-auto mb-3 text-slate-400" /><h4 className="font-bold mb-1">{showExpiredOnly ? 'No Missed Opportunities' : showBookmarksOnly ? 'No Bookmarked Opportunities Yet' : 'No opportunities found'}</h4><p className="text-xs text-slate-500 mb-5">Try another title, province, location, or deadline filter.</p><Button type="button" onClick={clearFilters} className="gap-2"><RotateCcw className="h-4 w-4" /> Clear Filters</Button></div>}
         {!loading && opportunities.length > 0 && <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">{opportunities.map((opportunity) => <OpportunityCard key={opportunity.id} opportunity={opportunity} onSelect={onSelectOpportunity} t={t} lang={lang} />)}</div>
-          {hasNext && <div className="flex flex-col items-center gap-2 mt-8"><Button type="button" onClick={loadMore} disabled={loadingMore} className="min-w-40 h-10 gap-2">{loadingMore ? <><Loader2 className="h-4 w-4 animate-spin" /> Loading...</> : 'Load More'}</Button><p className="text-xs text-slate-500">Showing {opportunities.length} of {total} opportunities</p></div>}
-          {!hasNext && total > PAGE_SIZE && <p className="text-center text-xs text-slate-500 mt-8">Showing all {opportunities.length} opportunities</p>}
+          <div ref={loadMoreRef} className="h-10 mt-8 flex items-center justify-center" aria-hidden="true">
+            {loadingMore && <span className="text-xs text-slate-500">Loading more opportunities...</span>}
+          </div>
+          {!hasNext && total > PAGE_SIZE && <p className="text-center text-xs text-slate-500 mt-2">Showing all {opportunities.length} opportunities</p>}
         </>}
       </section>
 
