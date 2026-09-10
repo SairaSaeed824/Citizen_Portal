@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 from app.core.database import get_db
+from app.rag.indexer import index_new_opportunities
 
 
 ALLOWED_CATEGORIES = {
@@ -212,6 +213,13 @@ def review_submission(
 
     if not inserted:
         raise ValueError("Could not publish approved opportunity")
+
+    # Index only after approval/publication. If embedding fails, keep the public
+    # DB row intact; the scheduler's reconciliation job can retry it later.
+    try:
+        index_new_opportunities(inserted)
+    except Exception:
+        pass
 
     db.table("submitted_opportunities").update(
         {
