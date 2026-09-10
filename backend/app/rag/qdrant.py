@@ -28,6 +28,25 @@ def ensure_collection(vector_size: int) -> None:
     )
 
 
+def get_indexed_hashes() -> Dict[int, str]:
+    client = get_qdrant()
+    try:
+        if not any(c.name == COLLECTION_NAME for c in client.get_collections().collections):
+            return {}
+        points, _ = client.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=10000,
+            with_vectors=False,
+            with_payload=["embedding_hash"],
+        )
+        return {
+            int(point.id): str((point.payload or {}).get("embedding_hash", ""))
+            for point in points
+        }
+    except Exception:
+        return {}
+
+
 def upsert_opportunity(opportunity_id: int, vector: List[float], payload: Dict[str, Any]) -> None:
     ensure_collection(len(vector))
     get_qdrant().upsert(
@@ -44,7 +63,4 @@ def search_opportunities(vector: List[float], limit: int = 8) -> List[Dict[str, 
         limit=limit,
         with_payload=True,
     ).points
-    return [
-        {"score": point.score, **(point.payload or {})}
-        for point in results
-    ]
+    return [{"score": point.score, **(point.payload or {})} for point in results]
