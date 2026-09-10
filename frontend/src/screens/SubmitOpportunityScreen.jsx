@@ -7,8 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Button } from '../components/ui/button';
 
 const CATEGORIES = [
-  ['job', 'Jobs'], ['scholarship', 'Scholarships'], ['loan', 'Loans'],
-  ['training', 'Training'], ['internship', 'Internships'],
+  ['job', 'Jobs'],
+  ['scholarship', 'Scholarships'],
+  ['loan', 'Loans'],
+  ['training', 'Training'],
+  ['internship', 'Internships'],
+  ['project', 'Projects'],
 ];
 
 const ATTRIBUTE_FIELDS = [
@@ -30,7 +34,10 @@ const ATTRIBUTE_FIELDS = [
 ];
 
 const INITIAL_FORM = Object.fromEntries([
-  ['name', ''], ['category', ''], ...ATTRIBUTE_FIELDS.map(([key]) => [key, '']), ['apply_link', '']
+  ['name', ''],
+  ['category', ''],
+  ...ATTRIBUTE_FIELDS.map(([key]) => [key, '']),
+  ['apply_link', ''],
 ]);
 
 export default function SubmitOpportunityScreen({ setCurrentScreen, t, lang }) {
@@ -52,12 +59,19 @@ export default function SubmitOpportunityScreen({ setCurrentScreen, t, lang }) {
 
     setIsSubmitting(true);
     try {
-      const payload = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value]));
+      const payload = Object.fromEntries(
+        Object.entries(form).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value])
+      );
       const result = await submitOpportunity(payload);
-      if (result.success) { setIsSuccess(true); setForm(INITIAL_FORM); }
+      if (result.success) {
+        setIsSuccess(true);
+        setForm(INITIAL_FORM);
+      }
     } catch (err) {
       setErrorMsg(err.message || 'An error occurred while submitting.');
-    } finally { setIsSubmitting(false); }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (isSuccess) {
