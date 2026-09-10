@@ -46,6 +46,52 @@ def _db_record(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _clean_database_answer(results: list[Dict[str, Any]], category: str) -> str:
+    """Build a deterministic, clean answer directly from database records."""
+    label = category.capitalize() + ("ies" if category == "opportunit" else "s")
+    if category == "job":
+        label = "Jobs"
+    elif category == "scholarship":
+        label = "Scholarships"
+    elif category == "loan":
+        label = "Loans"
+    elif category == "training":
+        label = "Training Opportunities"
+    elif category == "internship":
+        label = "Internships"
+    elif category == "project":
+        label = "Projects"
+
+    lines = [f"### {label}", ""]
+    for index, item in enumerate(results, start=1):
+        title = item.get("title") or "Untitled opportunity"
+        lines.append(f"**{index}. {title}**")
+
+        organization = item.get("organization")
+        if organization:
+            lines.append(f"Organization: {organization}")
+
+        location = item.get("location")
+        if location:
+            lines.append(f"Location: {location}")
+
+        province = item.get("province")
+        if province:
+            lines.append(f"Province: {province}")
+
+        deadline = item.get("closing_date")
+        if deadline:
+            lines.append(f"Deadline: {deadline}")
+
+        apply_link = item.get("apply_link")
+        if apply_link:
+            lines.append(f"[Apply Now]({apply_link})")
+
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     limit: int = Field(default=8, ge=1, le=15)
@@ -56,9 +102,7 @@ def chat(request: ChatRequest) -> Dict[str, Any]:
     try:
         category = _detect_category(request.message)
 
-        # For direct requests such as "give jobs from database", use Supabase
-        # as the source of truth. Do not let semantic search return unrelated
-        # categories or stale vector payloads.
+        # Direct category requests use Supabase as the source of truth.
         if category:
             response = (
                 get_db()
@@ -80,49 +124,21 @@ def chat(request: ChatRequest) -> Dict[str, Any]:
                 "relatedOpportunities": [],
             }
 
-        context = build_context(results)
-        answer = generate_answer(request.message, context)
+        # For direct database/category requests, do not ask Gemini to rewrite
+        # the records. This keeps titles, deadlines and Apply links exact.
+        if category:
+            answer = _clean_database_answer(results, category)
+        else:
+            context = build_context(results)
+            answer = generate_answer(request.message, context)
 
-        related_opportunities = []
-        for item in results[:5]:
-            if not item.get("opportunity_id") or not item.get("title"):
-                continue
-            related_opportunities.append({
-                "id": item.get("opportunity_id"),
-                "opportunity_id": item.get("opportunity_id"),
-                "title": item.get("title"),
-                "name": item.get("title"),
-                "category": item.get("category", ""),
-                "province": item.get("province", ""),
-                "location": item.get("location", ""),
-                "organization": item.get("organization", ""),
-                "description": item.get("description", ""),
-                "eligibility": item.get("eligibility", ""),
-                "closing_date": item.get("closing_date", ""),
-                "deadline": item.get("closing_date", ""),
-                "apply_link": item.get("apply_link", ""),
-                "source": item.get("source", ""),
-                "score": round(float(item.get("score", 0)), 4),
-            })
-
-        sources = [
-            {
-                "id": item.get("opportunity_id"),
-                "title": item.get("title", ""),
-                "category": item.get("category", ""),
-                "source": item.get("source", ""),
-                "apply_link": item.get("apply_link", ""),
-                "score": round(float(item.get("score", 0)), 4),
-            }
-            for item in results
-            if item.get("opportunity_id") and item.get("title")
-        ]
-
+        # The chatbot intentionally returns no related-opportunity cards.
+        # The answer itself contains the verified Apply links.
         return {
             "success": True,
             "answer": answer,
-            "sources": sources,
-            "relatedOpportunities": related_opportunities,
+            "sources": [],
+            "relatedOpportunities": [],
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Chatbot service error: {exc}")
