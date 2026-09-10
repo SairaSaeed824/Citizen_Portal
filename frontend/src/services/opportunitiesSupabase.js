@@ -18,14 +18,10 @@ export async function getOpportunitiesSupabase(filters = {}) {
   if (deadline !== 'all') params.append('deadline', deadline);
   if (sortBy !== 'default') params.append('sort_by', sortBy);
 
-  let url;
-  if (keyword.trim()) {
-    params.append('q', keyword.trim());
-    url = `${API_BASE_URL}/api/opportunities/search?${params.toString()}`;
-  } else {
-    const queryString = params.toString();
-    url = queryString ? `${API_BASE_URL}/api/opportunities?${queryString}` : `${API_BASE_URL}/api/opportunities`;
-  }
+  // Always use the main opportunities endpoint. Title searching is handled below on
+  // the normalized records so it works even when a scraped title lives in extra_data.
+  const queryString = params.toString();
+  const url = queryString ? `${API_BASE_URL}/api/opportunities?${queryString}` : `${API_BASE_URL}/api/opportunities`;
 
   const response = await fetch(url);
   if (!response.ok) throw new Error(`FastAPI request failed: ${response.status} ${response.statusText}`);
@@ -50,14 +46,15 @@ export async function getOpportunitiesSupabase(filters = {}) {
     };
   });
 
+  // Search ONLY the opportunity title, with flexible case/space matching.
+  if (keyword.trim()) {
+    const q = normalize(keyword).replace(/\s+/g, ' ');
+    results = results.filter((item) => normalize(item.title).replace(/\s+/g, ' ').includes(q));
+  }
+
   if (province !== 'all') {
     const targetProvince = normalize(province);
     results = results.filter((item) => normalize(item.province) === targetProvince);
-  }
-
-  if (keyword.trim()) {
-    const q = normalize(keyword);
-    results = results.filter((item) => normalize(item.title).includes(q));
   }
 
   if (status !== 'all') results = results.filter((item) => normalize(item.status) === normalize(status));
@@ -81,7 +78,6 @@ export async function submitOpportunitySupabase(payload) {
 }
 
 export async function getProvincesSupabase() {
-  // Always provide the standard Pakistan regions so the dropdown never appears empty.
   const standardProvinces = [
     'Punjab',
     'Sindh',
@@ -100,8 +96,6 @@ export async function getProvincesSupabase() {
     console.warn('Could not load provinces directly from Supabase:', error);
   }
 
-  // Also inspect the API records because scraped province/location data may only exist
-  // in the API response or inside extra_data.
   try {
     const response = await fetch(`${API_BASE_URL}/api/opportunities`);
     if (response.ok) {
