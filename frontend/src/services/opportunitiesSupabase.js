@@ -1,12 +1,11 @@
 import { supabase } from './supabaseClient';
 
 const API_BASE_URL = 'http://127.0.0.1:8000';
-
 const normalize = (value) => String(value ?? '').trim().toLowerCase();
 
 const getProvinceValue = (row) => {
   const extra = row?.extra_data || {};
-  return row?.province || extra.province || extra.Province || extra.PROVINCE || extra.region || extra.region_name || extra.province_name || '';
+  return row?.province || extra.province || extra.Province || extra.PROVINCE || extra.region || extra.region_name || extra.province_name || extra.ProvinceName || '';
 };
 
 export async function getOpportunitiesSupabase(filters = {}) {
@@ -51,15 +50,11 @@ export async function getOpportunitiesSupabase(filters = {}) {
     };
   });
 
-  // Apply a resilient province match on the normalized frontend data too. This handles
-  // scraped records where province is stored only inside extra_data or with different key casing.
   if (province !== 'all') {
     const targetProvince = normalize(province);
     results = results.filter((item) => normalize(item.province) === targetProvince);
   }
 
-  // The backend search endpoint may search multiple fields. Keep the UI focused on
-  // opportunity titles when the user is using the title search box.
   if (keyword.trim()) {
     const q = normalize(keyword);
     results = results.filter((item) => normalize(item.title).includes(q));
@@ -86,30 +81,54 @@ export async function submitOpportunitySupabase(payload) {
 }
 
 export async function getProvincesSupabase() {
-  // Province values are often stored inside extra_data by scrapers. Read all records
-  // and support the common province/region key variants used by scraped sources.
-  const { data, error } = await supabase.from('opportunities').select('province, extra_data');
-  if (error) throw error;
-
-  const values = data.flatMap((row) => [getProvinceValue(row)]).filter(Boolean);
-  const unique = Array.from(new Set(values.map((v) => String(v).trim()).filter(Boolean)));
-
-  // Keep the standard Pakistan regions together and then sort the remaining values.
-  const preferredOrder = [
+  // Always provide the standard Pakistan regions so the dropdown never appears empty.
+  const standardProvinces = [
     'Punjab',
     'Sindh',
     'Khyber Pakhtunkhwa',
-    'Khyber Pakhtunkhwa (KPK)',
     'Balochistan',
     'Islamabad Capital Territory',
-    'Islamabad',
     'Gilgit-Baltistan',
     'Azad Jammu and Kashmir',
-    'AJK',
   ];
-  const preferred = preferredOrder.filter((name) => unique.some((v) => normalize(v) === normalize(name)));
-  const remaining = unique.filter((v) => !preferred.some((p) => normalize(p) === normalize(v))).sort((a, b) => a.localeCompare(b));
-  return [...preferred, ...remaining];
+
+  let values = [];
+  try {
+    const { data, error } = await supabase.from('opportunities').select('province, extra_data');
+    if (!error && Array.isArray(data)) values = data.map(getProvinceValue).filter(Boolean);
+  } catch (error) {
+    console.warn('Could not load provinces directly from Supabase:', error);
+  }
+
+  // Also inspect the API records because scraped province/location data may only exist
+  // in the API response or inside extra_data.
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/opportunities`);
+    if (response.ok) {
+      const result = await response.json();
+      const apiValues = (result.data || []).map(getProvinceValue).filter(Boolean);
+      values = [...values, ...apiValues];
+    }
+  } catch (error) {
+    console.warn('Could not load provinces from API:', error);
+  }
+
+  const unique = Array.from(new Map(
+    [...standardProvinces, ...values]
+      .map((value) => String(value).trim())
+      .filter(Boolean)
+      .map((value) => [normalize(value), value])
+  ).values());
+
+  const order = standardProvinces.map(normalize);
+  return unique.sort((a, b) => {
+    const ai = order.indexOf(normalize(a));
+    const bi = order.indexOf(normalize(b));
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
 }
 
 export async function getCategoryStatsSupabase() {
