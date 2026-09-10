@@ -131,14 +131,47 @@ export default function ChatbotScreen({ setCurrentScreen, t, lang }) {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const cleanLinkLabel = (label) => {
+    return label
+      .replace(/^\*+|\*+$/g, '')
+      .replace(/\s*svg\s*$/i, '')
+      .replace(/\\([\\`*_\[\]#])/g, '$1')
+      .trim();
+  };
+
+  const cleanText = (text) => {
+    return String(text || '')
+      .replace(/\\([\\`*_\[\]#])/g, '$1')
+      .replace(/\*{3,}/g, '**')
+      .trim();
+  };
+
   const formatInline = (text) => {
-    const parts = text.split(/(\*\*.*?\*\*|`.*?`|\[[^\]]+\]\([^\)]+\)|https?:\/\/\S+)/g);
+    const value = cleanText(text);
+    const parts = value.split(/(\[(?:\*\*)?[^\]]+(?:\*\*)?\]\(https?:\/\/[^)]+\)|\*\*.*?\*\*|`.*?`|https?:\/\/\S+)/g);
 
     return parts.map((part, index) => {
+      const markdownLink = part.match(/^\[(.*?)\]\((https?:\/\/[^)]+)\)$/);
+      if (markdownLink) {
+        const label = cleanLinkLabel(markdownLink[1]) || 'Open Job';
+        return (
+          <a
+            key={index}
+            href={markdownLink[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 ml-1 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold no-underline transition-colors"
+          >
+            {label}
+            <ExternalLink className="w-3 h-3 shrink-0" />
+          </a>
+        );
+      }
+
       if (part.startsWith('**') && part.endsWith('**')) {
         return (
           <strong key={index} className="font-bold text-[#00401A] dark:text-emerald-400">
-            {part.slice(2, -2)}
+            {part.slice(2, -2).replace(/\s*svg\s*$/i, '')}
           </strong>
         );
       }
@@ -151,22 +184,6 @@ export default function ChatbotScreen({ setCurrentScreen, t, lang }) {
         );
       }
 
-      const markdownLink = part.match(/^\[([^\]]+)\]\((https?:\/\/[^\)]+)\)$/);
-      if (markdownLink) {
-        return (
-          <a
-            key={index}
-            href={markdownLink[2]}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 ml-1 text-emerald-700 dark:text-emerald-400 font-bold underline hover:text-emerald-900 dark:hover:text-emerald-300"
-          >
-            {markdownLink[1]}
-            <ExternalLink className="w-3 h-3" />
-          </a>
-        );
-      }
-
       if (/^https?:\/\/\S+$/.test(part)) {
         return (
           <a
@@ -174,7 +191,7 @@ export default function ChatbotScreen({ setCurrentScreen, t, lang }) {
             href={part}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 ml-1 text-emerald-700 dark:text-emerald-400 font-bold underline break-all hover:text-emerald-900 dark:hover:text-emerald-300"
+            className="inline-flex items-center gap-1 ml-1 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold no-underline transition-colors"
           >
             Open Job
             <ExternalLink className="w-3 h-3 shrink-0" />
@@ -189,22 +206,30 @@ export default function ChatbotScreen({ setCurrentScreen, t, lang }) {
   const formatText = (text) => {
     if (!text) return null;
 
-    return text.split('\n').map((line, idx) => {
+    return cleanText(text).split('\n').map((line, idx) => {
       const trimmed = line.trim();
 
       if (!trimmed) return <div key={idx} className="h-2" />;
 
+      if (/^###\s+/.test(trimmed)) {
+        return (
+          <h3 key={idx} className="mt-1 mb-3 text-base sm:text-lg font-extrabold text-[#00401A] dark:text-emerald-400">
+            {trimmed.replace(/^###\s+/, '')}
+          </h3>
+        );
+      }
+
       if (/^\d+\.\s/.test(trimmed)) {
         return (
-          <div key={idx} className="my-2 font-bold text-slate-900 dark:text-white leading-relaxed text-xs sm:text-sm">
+          <div key={idx} className="mt-3 mb-1 font-bold text-slate-900 dark:text-white leading-relaxed text-xs sm:text-sm">
             {formatInline(line)}
           </div>
         );
       }
 
-      if (trimmed.startsWith('•') || trimmed.startsWith('-') || trimmed.startsWith('*')) {
+      if (trimmed.startsWith('•') || trimmed.startsWith('-') || (trimmed.startsWith('*') && !trimmed.startsWith('**'))) {
         return (
-          <div key={idx} className="ml-4 my-1 list-disc text-slate-800 dark:text-slate-200 leading-relaxed text-xs sm:text-sm">
+          <div key={idx} className="ml-4 my-1 text-slate-800 dark:text-slate-200 leading-relaxed text-xs sm:text-sm">
             • {formatInline(trimmed.replace(/^[\s•\-*]+/, ''))}
           </div>
         );
