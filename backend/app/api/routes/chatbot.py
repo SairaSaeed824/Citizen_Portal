@@ -28,6 +28,31 @@ def chat(request: ChatRequest) -> Dict[str, Any]:
 
         context = build_context(results)
         answer = generate_answer(request.message, context)
+
+        # Related opportunities are always built from retrieved database records.
+        # Gemini is never allowed to create or invent these cards.
+        related_opportunities = []
+        for item in results[:5]:
+            if not item.get("opportunity_id") or not item.get("title"):
+                continue
+            related_opportunities.append({
+                "id": item.get("opportunity_id"),
+                "opportunity_id": item.get("opportunity_id"),
+                "title": item.get("title"),
+                "name": item.get("title"),
+                "category": item.get("category", ""),
+                "province": item.get("province", ""),
+                "location": item.get("location", ""),
+                "organization": item.get("organization", ""),
+                "description": item.get("description", ""),
+                "eligibility": item.get("eligibility", ""),
+                "closing_date": item.get("closing_date", ""),
+                "deadline": item.get("closing_date", ""),
+                "apply_link": item.get("apply_link", ""),
+                "source": item.get("source", ""),
+                "score": round(float(item.get("score", 0)), 4),
+            })
+
         sources = [
             {
                 "id": item.get("opportunity_id"),
@@ -38,12 +63,14 @@ def chat(request: ChatRequest) -> Dict[str, Any]:
                 "score": round(float(item.get("score", 0)), 4),
             }
             for item in results
+            if item.get("opportunity_id") and item.get("title")
         ]
+
         return {
             "success": True,
             "answer": answer,
             "sources": sources,
-            "relatedOpportunities": results[:5],
+            "relatedOpportunities": related_opportunities,
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Chatbot service error: {exc}")
