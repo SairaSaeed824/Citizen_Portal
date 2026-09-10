@@ -15,102 +15,26 @@ ALLOWED_CATEGORIES = {
 }
 
 
-def _clean(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip(" .,:;-\n\t")
-
-
-def _first_match(patterns: list[str], text: str) -> str:
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
-        if match:
-            return _clean(match.group(1))
-    return ""
-
-
-def extract_attributes(name: str, detail: str, category: str) -> Dict[str, Any]:
-    text = detail.strip()
-    extra: Dict[str, Any] = {}
-
-    patterns = {
-        "organization": [
-            r"(?:organization|organisation|department|ministry|provided by|offered by)\s*[:\-]\s*([^\n]+)"
-        ],
-        "province": [
-            r"(?:province|provincial)\s*[:\-]\s*([^\n,;.]+)",
-            r"\b(Punjab|Sindh|Khyber Pakhtunkhwa|KPK|Balochistan|Gilgit[- ]Baltistan|Azad Jammu and Kashmir|AJK|Islamabad Capital Territory|ICT)\b",
-        ],
-        "location": [
-            r"(?:location|city|located in)\s*[:\-]\s*([^\n;.]+)"
-        ],
-        "eligibility": [
-            r"(?:eligibility|eligible|who can apply)\s*[:\-]\s*([^\n]+)"
-        ],
-        "education": [
-            r"(?:education|qualification|degree|qualification required)\s*[:\-]\s*([^\n]+)"
-        ],
-        "age_limit": [
-            r"(?:age limit|age)\s*[:\-]\s*([^\n]+)"
-        ],
-        "duration": [
-            r"(?:duration|period)\s*[:\-]\s*([^\n]+)"
-        ],
-        "stipend": [
-            r"(?:stipend|monthly stipend)\s*[:\-]?\s*([^\n]+)"
-        ],
-        "amount": [
-            r"(?:amount|financial assistance|loan amount|grant amount|funding)\s*[:\-]?\s*([^\n]+)"
-        ],
-        "required_documents": [
-            r"(?:required documents|documents required|documents)\s*[:\-]\s*([^\n]+)"
-        ],
-        "benefits": [
-            r"(?:benefits|features)\s*[:\-]\s*([^\n]+)"
-        ],
-        "application_process": [
-            r"(?:application process|how to apply|apply)\s*[:\-]\s*([^\n]+)"
-        ],
-        "contact": [
-            r"(?:contact|contact person|helpline)\s*[:\-]\s*([^\n]+)"
-        ],
-    }
-
-    for key, patterns_for_key in patterns.items():
-        value = _first_match(patterns_for_key, text)
-        if value:
-            extra[key] = value
-
-    deadline = _first_match(
-        [
-            r"(?:deadline|closing date|last date|apply before|applications close)\s*[:\-]?\s*([^\n;.]+)",
-            r"(?:before|by)\s+((?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4})|(?:\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}))",
-        ],
-        text,
-    )
-    if deadline:
-        extra["closing_date_text"] = deadline
-
-    urls = re.findall(r'https?://[^\s<>\"]+', text)
-    if urls:
-        extra["apply_link"] = urls[0].rstrip(".,)")
-        if len(urls) > 1:
-            extra["additional_links"] = [u.rstrip(".,)") for u in urls[1:]]
-
-    extra.update(
-        {
-            "submitted_details": text,
-            "submitted_at": datetime.now(timezone.utc).isoformat(),
-            "source_type": "user_submitted",
-            "verification_status": "pending",
-            "category": category,
-            "title": name.strip(),
-        }
-    )
-
-    return extra
-
-
 def _normalize_title(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _clean_attributes(attributes: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep only user-provided non-empty values and normalize strings."""
+    cleaned: Dict[str, Any] = {}
+    for key, value in attributes.items():
+        if value is None:
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                continue
+        elif isinstance(value, list):
+            value = [str(item).strip() for item in value if str(item).strip()]
+            if not value:
+                continue
+        cleaned[key] = value
+    return cleaned
 
 
 def find_duplicate(name: str, category: str) -> Dict[str, Any] | None:
@@ -118,7 +42,6 @@ def find_duplicate(name: str, category: str) -> Dict[str, Any] | None:
     normalized = _normalize_title(name)
     category = category.lower().strip()
 
-    # Existing public opportunities use category + extra_data.
     try:
         public_rows = (
             db.table("opportunities")
@@ -137,7 +60,6 @@ def find_duplicate(name: str, category: str) -> Dict[str, Any] | None:
         if _normalize_title(str(existing_title)) == normalized:
             return {"table": "opportunities", "record": row}
 
-    # Pending citizen submissions use the name column.
     try:
         submitted_rows = (
             db.table("submitted_opportunities")
@@ -158,35 +80,53 @@ def find_duplicate(name: str, category: str) -> Dict[str, Any] | None:
     return None
 
 
-def create_submission(name: str, category: str, detail: str) -> Dict[str, Any]:
+def create_submission(name: str, category: str, attributes: Dict[str, Any]) -> Dict[str, Any]:
     category = category.lower().strip()
     name = name.strip()
-    detail = detail.strip()
 
     if category not in ALLOWED_CATEGORIES:
         raise ValueError("Invalid category")
+
+    if not name:
+        raise ValueError("Opportunity name is required")
+
+    attributes = _clean_attributes(attributes)
+    apply_link = str(attributes.get("apply_link", "")).strip()
+    if not apply_link:
+        raise ValueError("Apply link is required")
+    if not apply_link.startswith(("http://", "https://")):
+        raise ValueError("Apply link must start with http:// or https://")
 
     if find_duplicate(name, category):
         raise ValueError(
             "A similar opportunity already exists in the database or is already pending review."
         )
 
-    extra_data = extract_attributes(name, detail, category)
+    # Keep the database format flexible: all optional attributes supplied by
+    # the citizen are stored inside extra_data. Missing fields are not invented.
+    extra_data = {
+        **attributes,
+        "title": name,
+        "category": category,
+        "submitted_at": datetime.now(timezone.utc).isoformat(),
+        "source_type": "user_submitted",
+        "verification_status": "pending",
+    }
 
-    # Match the submitted_opportunities schema:
-    # name, category, detail, extra_data, status, verification_status, source_type.
+    # `detail` is retained as an empty value for compatibility with an older
+    # database column. The frontend no longer asks the citizen for a detail box.
     payload = {
         "name": name,
         "category": category,
-        "detail": detail,
+        "detail": "",
         "extra_data": extra_data,
         "status": "pending",
         "verification_status": "pending",
         "source_type": "user_submitted",
     }
 
-    result = db_insert = get_db().table("submitted_opportunities").insert(payload).execute()
-    return (db_insert.data or [{}])[0]
+    result = get_db().table("submitted_opportunities").insert(payload).execute()
+    return (result.data or [{}])[0]
 
 
 def list_pending_submissions() -> list[Dict[str, Any]]:
@@ -244,23 +184,32 @@ def review_submission(
             if key in edited_data:
                 record[key] = edited_data[key]
 
-    title = record.get("name") or (record.get("extra_data") or {}).get("title") or ""
+    title = str(record.get("name") or (record.get("extra_data") or {}).get("title") or "").strip()
     category = str(record.get("category") or "").lower().strip()
-    extra_data = dict(record.get("extra_data") or {})
+    extra_data = _clean_attributes(dict(record.get("extra_data") or {}))
+
+    if not title:
+        raise ValueError("Opportunity name is required")
+    if category not in ALLOWED_CATEGORIES:
+        raise ValueError("Invalid category")
+    if not extra_data.get("apply_link"):
+        raise ValueError("Apply link is required before approval")
+
     extra_data["title"] = title
     extra_data["category"] = category
+    extra_data["verification_status"] = "verified"
 
     duplicate = find_duplicate(title, category)
     if duplicate and duplicate["table"] == "opportunities":
         raise ValueError("This opportunity already exists in the public database.")
 
-    # Existing public opportunities only require category + extra_data.
-    public_payload = {
-        "category": category,
-        "extra_data": extra_data,
-    }
+    inserted = db.table("opportunities").insert(
+        {
+            "category": category,
+            "extra_data": extra_data,
+        }
+    ).execute().data
 
-    inserted = db.table("opportunities").insert(public_payload).execute().data
     if not inserted:
         raise ValueError("Could not publish approved opportunity")
 
