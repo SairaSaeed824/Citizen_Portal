@@ -13,35 +13,80 @@ def validate_filters(category: str, deadline: str, sort_by: str):
     category = category.lower().strip()
     deadline = deadline.lower().strip()
     sort_by = sort_by.lower().strip()
-    if category not in ALLOWED_CATEGORIES: raise HTTPException(400, "Invalid category")
-    if deadline not in ALLOWED_DEADLINES: raise HTTPException(400, "Invalid deadline filter")
-    if sort_by not in ALLOWED_SORTS: raise HTTPException(400, "Invalid sort option")
+    if category not in ALLOWED_CATEGORIES:
+        raise HTTPException(400, "Invalid category")
+    if deadline not in ALLOWED_DEADLINES:
+        raise HTTPException(400, "Invalid deadline filter")
+    if sort_by not in ALLOWED_SORTS:
+        raise HTTPException(400, "Invalid sort option")
     return category, deadline, sort_by
 
 
 @router.get("", response_model=OpportunityResponse)
 def fetch_opportunities(
-    category: str = Query("all"), province: str = Query("all"), location: str = Query(""),
-    organization: str = Query(""), deadline: str = Query("all"), sort_by: str = Query("default")
+    category: str = Query("all"),
+    province: str = Query("all"),
+    location: str = Query(""),
+    organization: str = Query(""),
+    deadline: str = Query("all"),
+    sort_by: str = Query("default"),
+    keyword: str = Query(""),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
 ):
     category, deadline, sort_by = validate_filters(category, deadline, sort_by)
-    data = get_opportunities(category, province, location, organization, deadline, sort_by)
-    return OpportunityResponse(success=True, category=category, count=len(data), data=data)
+    all_data = get_opportunities(
+        category, province, location, organization, deadline, sort_by, keyword
+    )
+    total = len(all_data)
+    start = (page - 1) * limit
+    data = all_data[start:start + limit]
+
+    return OpportunityResponse(
+        success=True,
+        category=category,
+        count=len(data),
+        total=total,
+        page=page,
+        limit=limit,
+        has_next=start + limit < total,
+        data=data,
+    )
 
 
 @router.get("/search")
 def search_opportunities_route(
     q: str = Query(..., min_length=1, description="Search opportunity title"),
-    category: str = Query("all"), province: str = Query("all"), location: str = Query(""),
-    organization: str = Query(""), deadline: str = Query("all"), sort_by: str = Query("default")
+    category: str = Query("all"),
+    province: str = Query("all"),
+    location: str = Query(""),
+    organization: str = Query(""),
+    deadline: str = Query("all"),
+    sort_by: str = Query("default"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
 ):
     category, deadline, sort_by = validate_filters(category, deadline, sort_by)
     results = search_opportunities(q, category, province, location, organization, deadline, sort_by)
-    return {"success": True, "query": q, "category": category, "count": len(results), "data": results}
+    total = len(results)
+    start = (page - 1) * limit
+    data = results[start:start + limit]
+    return {
+        "success": True,
+        "query": q,
+        "category": category,
+        "count": len(data),
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "has_next": start + limit < total,
+        "data": data,
+    }
 
 
 @router.get("/{opportunity_id}")
 def fetch_opportunity(opportunity_id: int):
     opportunity = get_opportunity_by_id(opportunity_id)
-    if opportunity is None: raise HTTPException(404, f"Opportunity with id {opportunity_id} not found")
+    if opportunity is None:
+        raise HTTPException(404, f"Opportunity with id {opportunity_id} not found")
     return {"success": True, "data": opportunity}
