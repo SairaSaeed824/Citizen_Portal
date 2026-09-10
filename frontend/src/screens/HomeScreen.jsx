@@ -21,9 +21,9 @@ import {
   Trash2,
   Clock,
   MapPin,
-  Building2,
   CalendarDays,
   ArrowUpDown,
+  Sparkles,
 } from 'lucide-react';
 import { getOpportunities, getProvinces, getCategoryStats } from '../services/opportunitiesService';
 
@@ -57,7 +57,6 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedProvince, setSelectedProvince] = useState('all');
   const [location, setLocation] = useState('');
-  const [organization, setOrganization] = useState('');
   const [deadline, setDeadline] = useState('all');
   const [sortBy, setSortBy] = useState('default');
   const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
@@ -81,7 +80,6 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
           category: selectedCategory,
           province: selectedProvince,
           location,
-          organization,
           deadline,
           keyword,
           sortBy,
@@ -116,7 +114,6 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
     selectedCategory,
     selectedProvince,
     location,
-    organization,
     deadline,
     sortBy,
     showBookmarksOnly,
@@ -128,7 +125,6 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
     setSelectedCategory('all');
     setSelectedProvince('all');
     setLocation('');
-    setOrganization('');
     setDeadline('all');
     setSortBy('default');
     setShowBookmarksOnly(false);
@@ -140,7 +136,6 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
     selectedCategory !== 'all' ||
     selectedProvince !== 'all' ||
     location ||
-    organization ||
     deadline !== 'all' ||
     sortBy !== 'default' ||
     showBookmarksOnly ||
@@ -158,7 +153,6 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
 
   return (
     <div className="bg-slate-50 dark:bg-slate-950 min-h-screen pb-16 text-slate-800 dark:text-slate-100">
-      {/* Hero no longer contains a duplicate search bar */}
       <HeroSection setKeyword={setKeyword} t={t} lang={lang} />
 
       <CivicStatsDashboard lang={lang} />
@@ -171,12 +165,11 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
       />
 
       <section id="directory" className="py-8 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-        {/* Clean, centered directory filters */}
-        <div className="mb-7 max-w-5xl mx-auto rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="mb-7 max-w-5xl mx-auto rounded-2xl border border-emerald-100 bg-white p-4 sm:p-5 shadow-sm shadow-emerald-100/50 dark:border-emerald-900/50 dark:bg-slate-900 dark:shadow-none">
           <div className="text-center mb-4">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Find an Opportunity</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Search by title and narrow results using location, organization, and deadline.
+              Search by title and refine results using province, location, deadline, and recommendations.
             </p>
           </div>
 
@@ -185,8 +178,9 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
             <Input
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder="Search by opportunity title..."
-              className="pl-10 h-11 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+              placeholder="Search opportunity title..."
+              aria-label="Search opportunities by title"
+              className="pl-10 h-12 rounded-xl bg-emerald-50/60 border-emerald-200 text-slate-800 placeholder:text-slate-400 shadow-inner shadow-emerald-100/40 transition focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/20 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-slate-100 dark:placeholder:text-slate-500"
             />
           </div>
 
@@ -219,16 +213,20 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
               />
             </div>
 
-            <div className="relative">
-              <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 z-10 pointer-events-none" />
-              <Input
-                value={organization}
-                onChange={(e) => setOrganization(e.target.value)}
-                placeholder="Organization"
-                className="pl-9"
-                aria-label="Filter by organization"
-              />
-            </div>
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger aria-label="Recommended opportunities">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Sparkles className="h-4 w-4 text-amber-500 shrink-0" />
+                  <SelectValue placeholder="Recommended" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">Recommended</SelectItem>
+                <SelectItem value="newest">Newest</SelectItem>
+                <SelectItem value="closing_soon">Closing Soon</SelectItem>
+                <SelectItem value="title">Title A–Z</SelectItem>
+              </SelectContent>
+            </Select>
 
             <Select value={deadline} onValueChange={setDeadline}>
               <SelectTrigger aria-label="Filter by deadline">
@@ -247,20 +245,20 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
           </div>
 
           <div className="mt-3 flex flex-wrap justify-center gap-2">
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-full sm:w-44" aria-label="Sort opportunities">
-                <div className="flex items-center gap-2 min-w-0">
-                  <ArrowUpDown className="h-4 w-4 text-slate-400 shrink-0" />
+            <div className="relative w-full sm:w-44">
+              <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 z-10 pointer-events-none" />
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-full pl-9" aria-label="Sort opportunities">
                   <SelectValue placeholder="Recommended" />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="default">Recommended</SelectItem>
-                <SelectItem value="newest">Newest</SelectItem>
-                <SelectItem value="closing_soon">Closing Soon</SelectItem>
-                <SelectItem value="title">Title A–Z</SelectItem>
-              </SelectContent>
-            </Select>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">Recommended</SelectItem>
+                  <SelectItem value="newest">Newest</SelectItem>
+                  <SelectItem value="closing_soon">Closing Soon</SelectItem>
+                  <SelectItem value="title">Title A–Z</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
             <Button
               type="button"
@@ -345,7 +343,7 @@ export default function HomeScreen({ onSelectOpportunity, t, lang }) {
                   : 'No opportunities found'}
             </h4>
             <p className="text-xs text-slate-500 mb-5">
-              Try another title, province, organization, location, or deadline filter.
+              Try another title, province, location, or deadline filter.
             </p>
             <Button type="button" onClick={clearFilters} className="gap-2">
               <RotateCcw className="h-4 w-4" />
