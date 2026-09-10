@@ -3,17 +3,7 @@ import { supabase } from './supabaseClient';
 const API_BASE_URL = 'http://127.0.0.1:8000';
 
 export async function getOpportunitiesSupabase(filters = {}) {
-  const {
-    category = 'all',
-    province = 'all',
-    location = '',
-    organization = '',
-    deadline = 'all',
-    keyword = '',
-    status = 'all',
-    sortBy = 'default',
-  } = filters;
-
+  const { category = 'all', province = 'all', location = '', organization = '', deadline = 'all', keyword = '', status = 'all', sortBy = 'default' } = filters;
   const params = new URLSearchParams();
   if (category !== 'all') params.append('category', category);
   if (province !== 'all') params.append('province', province);
@@ -22,23 +12,19 @@ export async function getOpportunitiesSupabase(filters = {}) {
   if (deadline !== 'all') params.append('deadline', deadline);
   if (sortBy !== 'default') params.append('sort_by', sortBy);
 
-  let results;
+  let url;
   if (keyword.trim()) {
     params.append('q', keyword.trim());
-    const response = await fetch(`${API_BASE_URL}/api/opportunities/search?${params.toString()}`);
-    if (!response.ok) throw new Error(`FastAPI request failed: ${response.status}`);
-    const result = await response.json();
-    results = result.data || [];
+    url = `${API_BASE_URL}/api/opportunities/search?${params.toString()}`;
   } else {
     const queryString = params.toString();
-    const url = queryString
-      ? `${API_BASE_URL}/api/opportunities?${queryString}`
-      : `${API_BASE_URL}/api/opportunities`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`FastAPI request failed: ${response.status}`);
-    const result = await response.json();
-    results = result.data || [];
+    url = queryString ? `${API_BASE_URL}/api/opportunities?${queryString}` : `${API_BASE_URL}/api/opportunities`;
   }
+
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`FastAPI request failed: ${response.status} ${response.statusText}`);
+  const result = await response.json();
+  let results = result.data || [];
 
   results = results.map((item) => {
     const extra = item.extra_data || {};
@@ -58,10 +44,7 @@ export async function getOpportunitiesSupabase(filters = {}) {
     };
   });
 
-  if (status !== 'all') {
-    results = results.filter((item) => (item.status || '').toLowerCase() === status.toLowerCase());
-  }
-
+  if (status !== 'all') results = results.filter((item) => (item.status || '').toLowerCase() === status.toLowerCase());
   return results;
 }
 
@@ -76,32 +59,27 @@ export async function searchOpportunitiesSupabase(keyword, category = 'all') {
 }
 
 export async function submitOpportunitySupabase(payload) {
-  const response = await fetch(`${API_BASE_URL}/api/submitted-opportunities`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(`${API_BASE_URL}/api/submitted-opportunities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   if (!response.ok) throw new Error(`Submission failed: ${response.status} ${response.statusText}`);
-  const data = await response.json();
-  return { success: true, message: 'Submission recorded', data };
+  return { success: true, message: 'Submission recorded', data: await response.json() };
 }
 
 export async function getProvincesSupabase() {
-  const { data, error } = await supabase.from('opportunities').select('province').neq('province', null);
+  // Province is often stored inside extra_data by scrapers.
+  const { data, error } = await supabase.from('opportunities').select('*');
   if (error) throw error;
-  return Array.from(new Set(data.map((row) => row.province).filter(Boolean))).sort();
+  const values = data.flatMap((row) => {
+    const extra = row.extra_data || {};
+    return [row.province, extra.province].filter(Boolean);
+  });
+  return Array.from(new Set(values.map((v) => String(v).trim()).filter(Boolean))).sort();
 }
 
 export async function getCategoryStatsSupabase() {
   const { data, error } = await supabase.from('opportunities').select('category');
   if (error) throw error;
-
   const counts = { job: 0, scholarship: 0, loan: 0, training: 0, internship: 0, project: 0 };
-  data.forEach((item) => {
-    const category = item.category?.toLowerCase()?.trim();
-    if (counts[category] !== undefined) counts[category]++;
-  });
-
+  data.forEach((item) => { const category = item.category?.toLowerCase()?.trim(); if (counts[category] !== undefined) counts[category]++; });
   return [
     { key: 'all', name: 'All Opportunities', nameUrdu: 'تمام مواقع', count: data.length, icon: 'LayoutGrid' },
     { key: 'job', name: 'Jobs', nameUrdu: 'ملازمتیں', count: counts.job, icon: 'Briefcase' },
