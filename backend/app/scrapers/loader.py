@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 from typing import Any, Dict, List
@@ -10,11 +11,15 @@ if _BACKEND_DIR not in sys.path:
 # Fallback import block to handle both direct script execution and package imports
 try:
     from app.core.database import get_db
+    from app.rag.indexer import index_new_opportunities
 except ImportError:
     try:
         from core.database import get_db
+        from rag.indexer import index_new_opportunities
     except ImportError:
-        raise ImportError("Could not resolve 'core.database'. Check your sys.path configuration.")
+        raise ImportError("Could not resolve backend imports. Check your sys.path configuration.")
+
+logger = logging.getLogger(__name__)
 
 
 def get_existing_hashes(category: str) -> set:
@@ -32,9 +37,14 @@ def get_existing_hashes(category: str) -> set:
 
 
 def save_to_db(rows: List[Dict[str, Any]]) -> Dict[str, int]:
-    """Insert rows into the DB in bulk, skipping duplicates via content_hash check."""
+    """Insert scraper rows and immediately index successfully inserted rows in Qdrant.
+
+    Database insertion is intentionally independent from embedding. If Gemini/Qdrant
+    is unavailable, the opportunity remains safely stored in Supabase and the regular
+    scheduler reconciliation can index it later.
+    """
     if not rows:
-        return {"inserted": 0, "skipped": 0}
+        return {"inserted": 0, "skipped": 0, "embedded": 0, "embedding_failed": 0}
 
     db = get_db()
     category = rows[0].get("category")
@@ -55,7 +65,25 @@ def save_to_db(rows: List[Dict[str, Any]]) -> Dict[str, int]:
         if row_hash:
             existing_hashes.add(row_hash)
 
-    if to_insert:
-        db.table("opportunities").insert(to_insert).execute()
+    if not to_insert:
+        return {"inserted": 0, "skipped": skipped, "embedded": 0, "embedding_failed": 0}
 
-    return {"inserted": len(to_insert), "skipped": skipped}
+    inserted_rows = db.table("opportunities").insert(to_insert).execute().data or []
+
+    embedded = 0
+    embedding_failed = 0
+    try:
+        rag_result = index_new_opportunities(inserted_rows)
+        embedded = rag_result.get("indexed", 0)
+        embedding_failed = rag_result.get("failed", 0)
+    except Exception as exc:
+        # Never roll back a successful DB insert because the vector service failed.
+        embedding_failed = len(inserted_rows)
+        logger.exception("Immediate RAG indexing failed after scraper DB insert: %s", exc)
+
+    return {
+        "inserted": len(inserted_rows),
+        "skipped": skipped,
+        "embedded": embedded,
+        "embedding_failed": embedding_failed,
+    }
