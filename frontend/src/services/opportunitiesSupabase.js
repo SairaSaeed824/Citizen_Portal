@@ -9,7 +9,12 @@ const getProvinceValue = (row) => {
 };
 
 export async function getOpportunitiesSupabase(filters = {}) {
-  const { category = 'all', province = 'all', location = '', organization = '', deadline = 'all', keyword = '', status = 'all', sortBy = 'default' } = filters;
+  const {
+    category = 'all', province = 'all', location = '', organization = '',
+    deadline = 'all', keyword = '', status = 'all', sortBy = 'default',
+    page = 1, limit = 50, returnMeta = false,
+  } = filters;
+
   const params = new URLSearchParams();
   if (category !== 'all') params.append('category', category);
   if (province !== 'all') params.append('province', province);
@@ -17,14 +22,15 @@ export async function getOpportunitiesSupabase(filters = {}) {
   if (organization.trim()) params.append('organization', organization.trim());
   if (deadline !== 'all') params.append('deadline', deadline);
   if (sortBy !== 'default') params.append('sort_by', sortBy);
+  if (keyword.trim()) params.append('keyword', keyword.trim());
+  params.append('page', String(page));
+  params.append('limit', String(limit));
 
-  // Always use the main opportunities endpoint. Title searching is handled below on
-  // the normalized records so it works even when a scraped title lives in extra_data.
   const queryString = params.toString();
-  const url = queryString ? `${API_BASE_URL}/api/opportunities?${queryString}` : `${API_BASE_URL}/api/opportunities`;
-
+  const url = `${API_BASE_URL}/api/opportunities?${queryString}`;
   const response = await fetch(url);
   if (!response.ok) throw new Error(`FastAPI request failed: ${response.status} ${response.statusText}`);
+
   const result = await response.json();
   let results = result.data || [];
 
@@ -46,18 +52,23 @@ export async function getOpportunitiesSupabase(filters = {}) {
     };
   });
 
-  // Search ONLY the opportunity title, with flexible case/space matching.
-  if (keyword.trim()) {
-    const q = normalize(keyword).replace(/\s+/g, ' ');
-    results = results.filter((item) => normalize(item.title).replace(/\s+/g, ' ').includes(q));
-  }
-
   if (province !== 'all') {
     const targetProvince = normalize(province);
-    results = results.filter((item) => normalize(item.province) === targetProvince);
+    results = results.filter((item) => normalize(item.province) === targetProvince || normalize(item.province) === 'all pakistan');
   }
 
   if (status !== 'all') results = results.filter((item) => normalize(item.status) === normalize(status));
+
+  if (returnMeta) {
+    return {
+      data: results,
+      total: result.total ?? results.length,
+      page: result.page ?? page,
+      limit: result.limit ?? limit,
+      hasNext: Boolean(result.has_next),
+    };
+  }
+
   return results;
 }
 
@@ -79,50 +90,10 @@ export async function submitOpportunitySupabase(payload) {
 
 export async function getProvincesSupabase() {
   const standardProvinces = [
-    'Punjab',
-    'Sindh',
-    'Khyber Pakhtunkhwa',
-    'Balochistan',
-    'Islamabad Capital Territory',
-    'Gilgit-Baltistan',
-    'Azad Jammu and Kashmir',
+    'Punjab', 'Sindh', 'Khyber Pakhtunkhwa', 'Balochistan',
+    'Islamabad Capital Territory', 'Gilgit-Baltistan', 'Azad Jammu and Kashmir',
   ];
-
-  let values = [];
-  try {
-    const { data, error } = await supabase.from('opportunities').select('province, extra_data');
-    if (!error && Array.isArray(data)) values = data.map(getProvinceValue).filter(Boolean);
-  } catch (error) {
-    console.warn('Could not load provinces directly from Supabase:', error);
-  }
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/opportunities`);
-    if (response.ok) {
-      const result = await response.json();
-      const apiValues = (result.data || []).map(getProvinceValue).filter(Boolean);
-      values = [...values, ...apiValues];
-    }
-  } catch (error) {
-    console.warn('Could not load provinces from API:', error);
-  }
-
-  const unique = Array.from(new Map(
-    [...standardProvinces, ...values]
-      .map((value) => String(value).trim())
-      .filter(Boolean)
-      .map((value) => [normalize(value), value])
-  ).values());
-
-  const order = standardProvinces.map(normalize);
-  return unique.sort((a, b) => {
-    const ai = order.indexOf(normalize(a));
-    const bi = order.indexOf(normalize(b));
-    if (ai !== -1 && bi !== -1) return ai - bi;
-    if (ai !== -1) return -1;
-    if (bi !== -1) return 1;
-    return a.localeCompare(b);
-  });
+  return standardProvinces;
 }
 
 export async function getCategoryStatsSupabase() {
