@@ -26,9 +26,7 @@ export async function getOpportunitiesSupabase(filters = {}) {
   params.append('page', String(page));
   params.append('limit', String(limit));
 
-  const queryString = params.toString();
-  const url = `${API_BASE_URL}/api/opportunities?${queryString}`;
-  const response = await fetch(url);
+  const response = await fetch(`${API_BASE_URL}/api/opportunities?${params.toString()}`);
   if (!response.ok) throw new Error(`FastAPI request failed: ${response.status} ${response.statusText}`);
 
   const result = await response.json();
@@ -56,7 +54,6 @@ export async function getOpportunitiesSupabase(filters = {}) {
     const targetProvince = normalize(province);
     results = results.filter((item) => normalize(item.province) === targetProvince || normalize(item.province) === 'all pakistan');
   }
-
   if (status !== 'all') results = results.filter((item) => normalize(item.status) === normalize(status));
 
   if (returnMeta) {
@@ -68,7 +65,6 @@ export async function getOpportunitiesSupabase(filters = {}) {
       hasNext: Boolean(result.has_next),
     };
   }
-
   return results;
 }
 
@@ -89,11 +85,28 @@ export async function submitOpportunitySupabase(payload) {
 }
 
 export async function getProvincesSupabase() {
-  const standardProvinces = [
-    'Punjab', 'Sindh', 'Khyber Pakhtunkhwa', 'Balochistan',
-    'Islamabad Capital Territory', 'Gilgit-Baltistan', 'Azad Jammu and Kashmir',
-  ];
-  return standardProvinces;
+  const standardProvinces = ['Punjab', 'Sindh', 'Khyber Pakhtunkhwa', 'Balochistan', 'Islamabad Capital Territory', 'Gilgit-Baltistan', 'Azad Jammu and Kashmir'];
+  let values = [];
+  try {
+    const { data, error } = await supabase.from('opportunities').select('province, extra_data');
+    if (!error && Array.isArray(data)) values = data.map(getProvinceValue).filter(Boolean);
+  } catch (error) { console.warn('Could not load provinces directly from Supabase:', error); }
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/opportunities?limit=100`);
+    if (response.ok) {
+      const result = await response.json();
+      values = [...values, ...(result.data || []).map(getProvinceValue).filter(Boolean)];
+    }
+  } catch (error) { console.warn('Could not load provinces from API:', error); }
+  const unique = Array.from(new Map([...standardProvinces, ...values].map((value) => String(value).trim()).filter(Boolean).map((value) => [normalize(value), value])).values());
+  const order = standardProvinces.map(normalize);
+  return unique.sort((a, b) => {
+    const ai = order.indexOf(normalize(a)); const bi = order.indexOf(normalize(b));
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
 }
 
 export async function getCategoryStatsSupabase() {
