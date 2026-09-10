@@ -16,7 +16,7 @@ def _closing_date(item: Dict[str, Any]) -> str:
     return _value(item, "closing_date", "deadline", "last_date")
 
 
-def get_opportunities(category="all", province="all", location="", organization="", deadline="all", sort_by="default"):
+def get_opportunities(category="all", province="all", location="", organization="", deadline="all", sort_by="default", keyword=""):
     db = get_db()
     query = db.table("opportunities").select("*")
     if category and category.lower() != "all":
@@ -32,6 +32,10 @@ def get_opportunities(category="all", province="all", location="", organization=
     if organization.strip():
         target = organization.lower().strip()
         data = [item for item in data if target in _value(item, "organization", "company", "department", "ministry", "source").lower()]
+
+    if keyword.strip():
+        target = " ".join(keyword.lower().strip().split())
+        data = [item for item in data if target in " ".join(_value(item, "title", "name", "job_title").lower().split())]
 
     if deadline != "all":
         today = date.today()
