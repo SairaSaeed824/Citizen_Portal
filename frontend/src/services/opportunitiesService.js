@@ -25,11 +25,16 @@ export async function searchOpportunities(keyword) {
 }
 
 export async function submitOpportunity(data) {
-  if (!data || !data.name?.trim() || !data.detail?.trim() || !data.category?.trim()) {
-    throw new Error('Name, category and detail are required fields.');
+  if (!data || !data.name?.trim() || !data.category?.trim() || !data.apply_link?.trim()) {
+    throw new Error('Opportunity name, category and apply link are required.');
   }
-  try { return await submitOpportunitySupabase(data); }
-  catch (e) { console.error('Submit opportunity error:', e); throw e; }
+
+  try {
+    return await submitOpportunitySupabase(data);
+  } catch (e) {
+    console.error('Submit opportunity error:', e);
+    throw e;
+  }
 }
 
 export async function askChatbot(question) {
