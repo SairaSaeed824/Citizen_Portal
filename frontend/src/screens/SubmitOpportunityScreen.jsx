@@ -3,12 +3,12 @@ import { Send, CheckCircle2, ShieldCheck, ArrowLeft, Sparkles, Info } from 'luci
 import { submitOpportunity } from '../services/opportunitiesService';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
-import { Select } from '../components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Button } from '../components/ui/button';
 
 const CATEGORIES = [
   ['job', 'Jobs'], ['scholarship', 'Scholarships'], ['loan', 'Loans'],
-  ['training', 'Training'], ['internship', 'Internships'], ['project', 'Projects'],
+  ['training', 'Training'], ['internship', 'Internships'],
 ];
 
 const ATTRIBUTE_FIELDS = [
@@ -99,10 +99,17 @@ export default function SubmitOpportunityScreen({ setCurrentScreen, t, lang }) {
 
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider mb-2">Category *</label>
-            <Select value={form.category} onChange={(e) => updateField('category', e.target.value)} required>
-              <option value="">Select category</option>
-              {CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            <Select value={form.category} onValueChange={(value) => updateField('category', value)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORIES.map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
             </Select>
+            <p className="mt-1.5 text-xs text-slate-400">Choose the type of opportunity you are submitting.</p>
           </div>
 
           <div className="border-t border-slate-100 dark:border-slate-800 pt-5">
