@@ -4,13 +4,9 @@ import {
   ExternalLink,
   MapPin,
   Building2,
-  Briefcase,
   GraduationCap,
   Landmark,
   Sparkles,
-  Building,
-  Share2,
-  Check,
   ShieldCheck,
   AlertCircle,
   FileText,
@@ -18,78 +14,70 @@ import {
   Flame
 } from 'lucide-react';
 
-const categoryIcons = {
-  job: Briefcase,
-  scholarship: GraduationCap,
-  loan: Landmark,
-  training: Sparkles,
-  internship: Building
-};
-
-export default function OpportunityDetailModal({ opportunity, onClose, t, lang }) {
+export default function OpportunityDetailModal({
+  opportunity,
+  onClose,
+  t,
+  lang
+}) {
   const [copied, setCopied] = useState(false);
-  if (!opportunity) return null;
 
-  const {
-    id,
-    category,
-    extra_data = {}
-  } = opportunity;
+  if (!opportunity) {
+    return null;
+  }
 
-  const {
-    title = 'Opportunity Details',
+  const category = opportunity.category || '';
+  const extraData = opportunity.extra_data || {};
 
-    organization =
-      extra_data.organization ||
-      'Government Department',
+  const title = extraData.title || 'Opportunity Details';
 
-    location =
-      extra_data.location ||
-      extra_data.province ||
-      '',
+  const organization =
+    extraData.organization || 'Government Department';
 
-    closing_date =
-      extra_data.closing_date || '',
+  const location =
+    extraData.location ||
+    extraData.province ||
+    '';
 
-    apply_link =
-      extra_data.apply_link ||
-      extra_data.link ||
-      extra_data.url ||
-      '#',
+  const closingDate =
+    extraData.closing_date || '';
 
-    status =
-      extra_data.status || 'active'
-  } = extra_data;
-
-  // PSIC career rows intentionally have no description. Older database rows
-  // may still contain the whole table row, so never show that as an overview.
-  const isPSICJob =
-    String(extra_data.source || '').toLowerCase() === 'psic website' &&
-    String(category || '').toLowerCase() === 'job';
-
-  const overview = isPSICJob ? '' : (
-    extra_data.program_overview ||
-    opportunity.description ||
-    extra_data.description ||
-    extra_data.overview ||
-    extra_data.details ||
-    extra_data.job_description ||
-    ''
-  );
+  const applyLink =
+    extraData.apply_link ||
+    extraData.link ||
+    extraData.url ||
+    '#';
 
   const isUrdu = lang === 'ur';
 
   /*
-   * These fields are handled separately.
-   *
-   * IMPORTANT:
-   * icon is excluded so it will NOT appear
-   * inside Key Information.
+   * PSIC career rows intentionally have no description.
+   */
+  const isPSICJob =
+    String(extraData.source || '').toLowerCase() ===
+      'psic website' &&
+    String(category).toLowerCase() === 'job';
+
+  const overview = isPSICJob
+    ? ''
+    : (
+        extraData.program_overview ||
+        opportunity.description ||
+        extraData.description ||
+        extraData.overview ||
+        extraData.details ||
+        extraData.job_description ||
+        ''
+      );
+
+  /*
+   * Fields that are already displayed separately.
+   * They will not appear again inside Key Information.
    */
   const standardKeys = new Set([
     'title',
     'organization',
-    // 'location',
+    'location',
     'province',
     'description',
     'program_overview',
@@ -97,9 +85,9 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
     'details',
     'job_description',
     'closing_date',
-    // 'posted_date',
-     'apply_link',
-    // 'link',
+    'posted_date',
+    'apply_link',
+    'link',
     'url',
     'status',
     'content_hash',
@@ -109,40 +97,36 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
   ]);
 
   /*
-   * Dynamic fields.
-   *
-   * No icon is rendered for these fields.
-   * Any extra scraper fields will automatically
-   * appear here.
+   * Automatically collect all remaining extra_data fields.
    */
-  const dynamicEntries = Object.entries(
-    extra_data
-  ).filter(
-    ([key, value]) =>
-      !standardKeys.has(key) &&
-      value !== null &&
-      value !== undefined &&
-      value !== ''
+  const dynamicEntries = Object.entries(extraData).filter(
+    ([key, value]) => {
+      return (
+        !standardKeys.has(key) &&
+        value !== null &&
+        value !== undefined &&
+        value !== ''
+      );
+    }
   );
 
+  /*
+   * Calculate remaining days.
+   */
   let daysRemaining = null;
   let isClosingSoon = false;
-  if (closing_date) {
+
+  if (closingDate) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const deadline = new Date(
-      closing_date
-    );
-
+    const deadline = new Date(closingDate);
     deadline.setHours(0, 0, 0, 0);
 
-    const diffTime =
-      deadline - today;
+    const diffTime = deadline.getTime() - today.getTime();
 
     daysRemaining = Math.ceil(
-      diffTime /
-        (1000 * 60 * 60 * 24)
+      diffTime / (1000 * 60 * 60 * 24)
     );
 
     if (
@@ -154,53 +138,102 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
   }
 
   /*
-   * Share opportunity
+   * Share current page.
    */
   const handleShare = async () => {
     try {
       if (navigator.clipboard) {
-        await navigator.clipboard.writeText(window.location.href);
+        await navigator.clipboard.writeText(
+          window.location.href
+        );
+
         setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+
+        setTimeout(() => {
+          setCopied(false);
+        }, 2000);
       }
     } catch (error) {
-      console.error('Failed to copy link:', error);
+      console.error(
+        'Failed to copy link:',
+        error
+      );
     }
   };
 
-  const handleWhatsAppShare = () => {
-    const shareText = `*${title}*\n🏛 Organization: ${organization}\n📍 Location: ${location || 'Pakistan'}\n📅 Deadline: ${closing_date || 'Open'}\n🔗 Apply Link: ${apply_link}\n\n_Shared via Citizen Opportunities Portal_`;
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`, '_blank');
-  };
-
   /*
-   * Flexible field value formatter
+   * Share on WhatsApp.
    */
-  const formatFieldValue = (val) => {
-    if (val === true) return 'Yes / فراہم کیا جائے گا';
-    if (val === false) return 'No / درکار نہیں';
-    if (Array.isArray(val)) return val.join(', ');
-    if (typeof val === 'number') return val >= 1000 ? `PKR ${val.toLocaleString()}` : val.toString();
-    if (typeof val === 'object' && val !== null) return JSON.stringify(val);
-    return String(val);
+  const handleWhatsAppShare = () => {
+    const shareText =
+      `*${title}*\n` +
+      `🏛 Organization: ${organization}\n` +
+      `📍 Location: ${location || 'Pakistan'}\n` +
+      `📅 Deadline: ${closingDate || 'Open'}\n` +
+      `🔗 Apply Link: ${applyLink}\n\n` +
+      `_Shared via Citizen Opportunities Portal_`;
+
+    const whatsappUrl =
+      `https://api.whatsapp.com/send?text=${encodeURIComponent(
+        shareText
+      )}`;
+
+    window.open(
+      whatsappUrl,
+      '_blank',
+      'noopener,noreferrer'
+    );
   };
 
   /*
-   * Convert snake_case field names
-   * into readable names.
+   * Convert different value types into readable text.
+   */
+  const formatFieldValue = (value) => {
+    if (value === true) {
+      return 'Yes';
+    }
+
+    if (value === false) {
+      return 'No';
+    }
+
+    if (Array.isArray(value)) {
+      return value.join(', ');
+    }
+
+    if (typeof value === 'number') {
+      return value >= 1000
+        ? `PKR ${value.toLocaleString()}`
+        : value.toString();
+    }
+
+    if (
+      typeof value === 'object' &&
+      value !== null
+    ) {
+      return JSON.stringify(value);
+    }
+
+    return String(value);
+  };
+
+  /*
+   * Convert snake_case into readable field names.
    */
   const getFieldFriendlyName = (key) => {
-    if (t?.fieldLabels?.[key]) return t.fieldLabels[key];
-    return key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-  };
+    if (t?.fieldLabels?.[key]) {
+      return t.fieldLabels[key];
+    }
 
-  /*
-   * Category label
-   */
-  const categoryName =
-    category === 'project'
-      ? 'Projects'
-      : category;
+    return key
+      .split('_')
+      .map(
+        (word) =>
+          word.charAt(0).toUpperCase() +
+          word.slice(1)
+      )
+      .join(' ');
+  };
 
   return (
     <div
@@ -231,15 +264,11 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
           animate-spring-in
           transition-colors
         "
-        onClick={(e) =>
-          e.stopPropagation()
-        }
+        onClick={(event) => {
+          event.stopPropagation();
+        }}
       >
-
-        {/* =====================================================
-            HEADER
-        ====================================================== */}
-
+        {/* HEADER */}
         <div
           className="
             pakistan-hero-bg
@@ -249,8 +278,7 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
             relative
           "
         >
-
-          {/* Close Button */}
+          {/* Close */}
           <button
             type="button"
             onClick={onClose}
@@ -271,10 +299,7 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
             <X className="w-5 h-5" />
           </button>
 
-          {/* =================================================
-              BADGES
-          ================================================== */}
-
+          {/* BADGES */}
           <div
             className="
               flex flex-wrap
@@ -283,9 +308,7 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
               mb-3
             "
           >
-
-            {/* Category Badge
-                NO ICON HERE */}
+            {/* Category */}
             <span
               className="
                 inline-flex
@@ -305,8 +328,7 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
               {category}
             </span>
 
-            {/* Verified Badge
-                ICON REMAINS */}
+            {/* Verified */}
             <span
               className="
                 inline-flex
@@ -329,24 +351,39 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
               />
 
               <span>
-                {t.verifiedGovt}
+                {t?.verifiedGovt || 'Verified Government'}
               </span>
             </span>
 
-            {/* Closing Soon Badge
-                ICON REMAINS */}
+            {/* Closing Soon */}
             {isClosingSoon && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-rose-500/30 text-rose-200 border border-rose-400/40 animate-pulse">
+              <span
+                className="
+                  inline-flex
+                  items-center
+                  gap-1
+                  px-2.5 py-0.5
+                  rounded-full
+                  text-xs
+                  font-extrabold
+                  bg-rose-500/30
+                  text-rose-200
+                  border border-rose-400/40
+                  animate-pulse
+                "
+              >
                 <Flame className="w-3.5 h-3.5 text-rose-400" />
-                <span>{daysRemaining === 0 ? 'Ends Today!' : `${daysRemaining} Days Left`}</span>
+
+                <span>
+                  {daysRemaining === 0
+                    ? 'Ends Today!'
+                    : `${daysRemaining} Days Left`}
+                </span>
               </span>
             )}
           </div>
 
-          {/* =================================================
-              TITLE
-          ================================================== */}
-
+          {/* TITLE */}
           <h3
             className={`
               text-xl sm:text-2xl
@@ -360,10 +397,7 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
             {title}
           </h3>
 
-          {/* =================================================
-              ORGANIZATION + LOCATION
-          ================================================== */}
-
+          {/* ORGANIZATION + LOCATION */}
           <div
             className="
               flex flex-wrap
@@ -374,8 +408,6 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
               dark:text-emerald-200
             "
           >
-
-            {/* Organization */}
             {organization && (
               <div
                 className="
@@ -398,7 +430,6 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
               </div>
             )}
 
-            {/* Location */}
             {location && (
               <div
                 className="
@@ -423,10 +454,7 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
           </div>
         </div>
 
-        {/* =====================================================
-            BODY
-        ====================================================== */}
-
+        {/* BODY */}
         <div
           className="
             p-5 sm:p-6
@@ -436,11 +464,7 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
             dark:text-slate-200
           "
         >
-
-          {/* =================================================
-              ABOUT PROGRAM
-          ================================================== */}
-
+          {/* ABOUT PROGRAM */}
           {overview && (
             <div>
               <h4
@@ -458,7 +482,6 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
                   ${isUrdu ? 'urdu-text' : ''}
                 `}
               >
-                {/* Icon remains */}
                 <FileText
                   className="
                     w-4 h-4
@@ -468,21 +491,35 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
                 />
 
                 <span>
-                  {t.aboutProgram}
+                  {t?.aboutProgram || 'About Program'}
                 </span>
               </h4>
-              <div className={`bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 text-slate-700 dark:text-slate-300 leading-relaxed text-xs sm:text-sm whitespace-pre-line ${isUrdu ? 'urdu-text' : ''}`}>{overview}</div>
+
+              <div
+                className={`
+                  bg-slate-50
+                  dark:bg-slate-800/70
+                  border
+                  border-slate-200
+                  dark:border-slate-800
+                  rounded-2xl
+                  p-4 sm:p-5
+                  text-slate-700
+                  dark:text-slate-300
+                  leading-relaxed
+                  text-xs sm:text-sm
+                  whitespace-pre-line
+                  ${isUrdu ? 'urdu-text' : ''}
+                `}
+              >
+                {overview}
+              </div>
             </div>
           )}
 
-          {/* =================================================
-              KEY INFORMATION
-          ================================================== */
-
+          {/* KEY INFORMATION */}
           {dynamicEntries.length > 0 && (
             <div>
-
-              {/* Section Heading */}
               <h4
                 className={`
                   text-xs
@@ -498,7 +535,6 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
                   ${isUrdu ? 'urdu-text' : ''}
                 `}
               >
-                {/* Section icon remains */}
                 <Sparkles
                   className="
                     w-4 h-4
@@ -508,11 +544,10 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
                 />
 
                 <span>
-                  {t.keyInformation}
+                  {t?.keyInformation || 'Key Information'}
                 </span>
               </h4>
 
-              {/* Dynamic Fields */}
               <div
                 className="
                   grid
@@ -539,12 +574,6 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
                         shadow-2xs
                       "
                     >
-
-                      {/* =====================================
-                          IMPORTANT:
-                          NO ICON FOR DYNAMIC FIELDS
-                      ====================================== */}
-
                       <span
                         className="
                           block
@@ -577,10 +606,7 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
             </div>
           )}
 
-          {/* =================================================
-              OFFICIAL APPLICATION NOTICE
-          ================================================== */
-
+          {/* OFFICIAL APPLICATION NOTICE */}
           <div
             className="
               bg-emerald-50
@@ -598,7 +624,6 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
               text-xs
             "
           >
-            {/* Icon remains */}
             <AlertCircle
               className="
                 w-4 h-4
@@ -620,16 +645,14 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
                   dark:text-emerald-200/80
                 "
               >
-                {t.officialApplyNotice}
+                {t?.officialApplyNotice ||
+                  'You are being redirected to the official application page.'}
               </p>
             </div>
           </div>
         </div>
 
-        {/* =====================================================
-            FOOTER
-        ====================================================== */}
-
+        {/* FOOTER */}
         <div
           className="
             bg-slate-50
@@ -646,8 +669,7 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
             gap-3
           "
         >
-
-          {/* Left Buttons */}
+          {/* LEFT BUTTONS */}
           <div
             className="
               flex
@@ -658,7 +680,6 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
               sm:w-auto
             "
           >
-
             {/* Back */}
             <button
               type="button"
@@ -681,16 +702,78 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
                 cursor-pointer
               "
             >
-              {t.backToDirectory}
+              {t?.backToDirectory || 'Back'}
             </button>
-            <button type="button" onClick={handleWhatsAppShare} className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/80 hover:bg-emerald-200 dark:hover:bg-emerald-900 border border-emerald-300 dark:border-emerald-800 transition flex items-center gap-1.5 cursor-pointer" title="Share on WhatsApp">
-              <MessageCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /><span>WhatsApp</span>
+
+            {/* WhatsApp */}
+            <button
+              type="button"
+              onClick={handleWhatsAppShare}
+              className="
+                px-3.5 py-2.5
+                rounded-xl
+                text-xs
+                font-bold
+                text-emerald-800
+                dark:text-emerald-300
+                bg-emerald-100
+                dark:bg-emerald-950/80
+                hover:bg-emerald-200
+                dark:hover:bg-emerald-900
+                border
+                border-emerald-300
+                dark:border-emerald-800
+                transition
+                flex
+                items-center
+                gap-1.5
+                cursor-pointer
+              "
+              title="Share on WhatsApp"
+            >
+              <MessageCircle
+                className="
+                  w-3.5 h-3.5
+                  text-emerald-600
+                  dark:text-emerald-400
+                "
+              />
+
+              <span>
+                WhatsApp
+              </span>
+            </button>
+
+            {/* Copy Link */}
+            <button
+              type="button"
+              onClick={handleShare}
+              className="
+                px-3.5 py-2.5
+                rounded-xl
+                text-xs
+                font-bold
+                text-slate-700
+                dark:text-slate-300
+                bg-white
+                dark:bg-slate-900
+                hover:bg-slate-100
+                dark:hover:bg-slate-800
+                border
+                border-slate-300
+                dark:border-slate-700
+                transition
+                cursor-pointer
+              "
+              title="Copy page link"
+            >
+              {copied ? 'Copied!' : 'Share'}
             </button>
           </div>
 
-          {/* Apply Button */}
+          {/* APPLY */}
           <a
-            href={apply_link}
+            href={applyLink}
             target="_blank"
             rel="noopener noreferrer"
             className="
@@ -717,7 +800,7 @@ export default function OpportunityDetailModal({ opportunity, onClose, t, lang }
             "
           >
             <span>
-              {t.applyNow}
+              {t?.applyNow || 'Apply Now'}
             </span>
 
             <ExternalLink className="w-4 h-4" />
