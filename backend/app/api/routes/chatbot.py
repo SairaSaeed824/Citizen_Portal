@@ -23,7 +23,7 @@ CATEGORY_ALIASES = {
 
 PROVINCES = {"punjab": "Punjab", "sindh": "Sindh", "kpk": "KPK", "kp": "KPK", "khyber pakhtunkhwa": "KPK", "balochistan": "Balochistan", "islamabad": "Islamabad"}
 LOCATION_TERMS = {"lahore", "karachi", "islamabad", "rawalpindi", "peshawar", "quetta", "multan", "faisalabad", "hyderabad", "sialkot", "gujranwala", "bahawalpur", "sargodha", "abbottabad", "murree"}
-STOPWORDS = {"a", "an", "the", "for", "in", "on", "at", "to", "of", "and", "or", "me", "my", "is", "are", "show", "give", "list", "find", "get", "available", "latest", "new", "please", "any", "some", "with", "from", "near", "opportunities", "opportunity", "openings", "opening", "there", "can", "you", "want", "need", "looking"}
+STOPWORDS = {"a", "an", "the", "for", "in", "on", "at", "to", "of", "and", "or", "me", "my", "is", "are", "show", "give", "list", "find", "get", "available", "latest", "new", "please", "any", "some", "with", "from", "near", "opportunities", "opportunity", "openings", "opening", "there", "can", "you", "want", "need", "looking", "tell", "about", "what", "which", "how", "information", "info", "explain", "explanation"}
 
 
 def _words(message: str) -> list[str]:
@@ -104,7 +104,6 @@ def _fetch_structured(category: str, limit: int, province: Optional[str], locati
     results = [_db_record(row) for row in (response.data or []) if row.get("id") is not None]
     results = [item for item in results if _matches_location(item, province, location) and _matches_keywords(item, keywords) and _is_active(item)]
     if latest:
-        # Smaller closing dates are nearer to expiry; when a source does not provide a date it is placed last.
         results.sort(key=lambda item: _date_value(item.get("closing_date")) or date.max)
     return results[:limit]
 
