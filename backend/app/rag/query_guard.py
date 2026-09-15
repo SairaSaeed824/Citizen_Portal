@@ -1,17 +1,25 @@
 import re
 from typing import Tuple
 
-# These are intentionally broad. The guard must reject obvious off-topic
-# questions without requiring another LLM/API call.
+# Common user typos/variants. Normalized locally so no LLM call is needed.
+QUERY_NORMALIZATIONS = {
+    "schoolarship": "scholarship",
+    "schoolarships": "scholarships",
+    "internship": "internship",
+    "internhips": "internships",
+    "scholorship": "scholarship",
+    "scholorships": "scholarships",
+}
+
 OPPORTUNITY_TERMS = {
     "job", "jobs", "career", "careers", "employment", "vacancy", "vacancies",
     "scholarship", "scholarships", "funding", "fellowship", "fellowships",
     "loan", "loans", "finance", "financial", "training", "trainings", "course",
     "courses", "internship", "internships", "project", "projects", "opportunity",
-    "opportunities", "program", "programs", "programme", "programmes",
-    "apply", "application", "applications", "deadline", "deadlines", "eligibility",
-    "eligible", "requirements", "requirement", "opening", "openings", "position",
-    "positions", "hiring", "recruitment", "grant", "grants",
+    "opportunities", "program", "programs", "programme", "programmes", "apply",
+    "application", "applications", "deadline", "deadlines", "eligibility", "eligible",
+    "requirements", "requirement", "opening", "openings", "position", "positions",
+    "hiring", "recruitment", "grant", "grants",
 }
 
 PAKISTAN_TERMS = {
@@ -29,12 +37,19 @@ TARGET_TERMS = {
 
 INTENT_TERMS = {
     "find", "show", "give", "list", "available", "latest", "new", "search", "looking",
-    "need", "want", "help", "which", "what", "where", "how", "can", "any",
+    "need", "want", "help", "which", "what", "where", "how", "can", "any", "get",
 }
 
 
+def normalize_query(message: str) -> str:
+    """Normalize common typos without making an external/API call."""
+    text = message.lower().strip()
+    words = text.split()
+    return " ".join(QUERY_NORMALIZATIONS.get(word, word) for word in words)
+
+
 def _words(message: str) -> set[str]:
-    return set(re.sub(r"[^a-z\s]", " ", message.lower()).split())
+    return set(re.sub(r"[^a-z\s]", " ", normalize_query(message)).split())
 
 
 def check_query_relevance(message: str) -> Tuple[bool, str]:
@@ -48,24 +63,12 @@ def check_query_relevance(message: str) -> Tuple[bool, str]:
     target_hits = words & TARGET_TERMS
     intent_hits = words & INTENT_TERMS
 
-    score = 0
-    score += min(len(opportunity_hits) * 3, 6)
-    score += min(len(pakistan_hits) * 2, 2)
-    score += min(len(target_hits), 2)
-    score += min(len(intent_hits), 1)
-
-    # Explicit opportunity/domain language is enough on its own.
+    # Explicit Citizen Portal opportunity language is relevant.
     if opportunity_hits:
         return True, "opportunity terms detected"
 
-    # Allow natural queries such as "financial support for Pakistani students"
-    # even when they do not contain the literal word scholarship/loan.
+    # Natural queries such as "support for Pakistani students" are relevant.
     if (pakistan_hits or target_hits) and intent_hits:
         return True, "citizen/opportunity intent detected"
-
-    # Broad domain signals can also be sufficient for questions like
-    # "What is available in Punjab?".
-    if score >= 3:
-        return True, "domain relevance detected"
 
     return False, "question is outside Citizen Portal opportunity scope"
