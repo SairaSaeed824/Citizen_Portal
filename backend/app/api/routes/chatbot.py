@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.rag.gemini import generate_answer
+from app.rag.query_guard import check_query_relevance
 from app.rag.retriever import build_context, retrieve
 
 router = APIRouter(prefix="/api/chatbot", tags=["Chatbot"])
@@ -100,6 +101,21 @@ class ChatRequest(BaseModel):
 @router.post("/chat")
 def chat(request: ChatRequest) -> Dict[str, Any]:
     try:
+        # IMPORTANT: this check is completely local. It runs before category
+        # detection, Supabase, Gemini embeddings, Qdrant, and Gemini chat.
+        is_relevant, _reason = check_query_relevance(request.message)
+        if not is_relevant:
+            return {
+                "success": True,
+                "answer": (
+                    "I can help with jobs, internships, scholarships, loans, "
+                    "training, and projects listed on Citizen Portal. "
+                    "Please ask a question related to these opportunities."
+                ),
+                "sources": [],
+                "relatedOpportunities": [],
+            }
+
         category = _detect_category(request.message)
 
         # Direct category requests use Supabase as the source of truth.
@@ -114,6 +130,8 @@ def chat(request: ChatRequest) -> Dict[str, Any]:
             )
             results = [_db_record(row) for row in (response.data or []) if row.get("id") is not None]
         else:
+            # For semantic questions, retrieve first. retrieve() applies the
+            # Qdrant similarity threshold before anything reaches Gemini.
             results = retrieve(request.message, limit=request.limit)
 
         if not results:
@@ -132,8 +150,6 @@ def chat(request: ChatRequest) -> Dict[str, Any]:
             context = build_context(results)
             answer = generate_answer(request.message, context)
 
-        # The chatbot intentionally returns no related-opportunity cards.
-        # The answer itself contains the verified Apply links.
         return {
             "success": True,
             "answer": answer,
