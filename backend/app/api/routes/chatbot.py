@@ -1,95 +1,125 @@
 import re
-from typing import Any, Dict, Optional
+from datetime import date, datetime
+from typing import Any, Dict, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.rag.gemini import generate_answer
-from app.rag.query_guard import check_query_relevance
+from app.rag.query_guard import check_query_relevance, normalize_query
 from app.rag.retriever import build_context, retrieve
 
 router = APIRouter(prefix="/api/chatbot", tags=["Chatbot"])
 
 CATEGORY_ALIASES = {
     "job": {"job", "jobs", "employment", "vacancies", "vacancy"},
-    "scholarship": {"scholarship", "scholarships"},
+    "scholarship": {"scholarship", "scholarships", "schoolarship", "schoolarships", "scholorship", "scholorships"},
     "loan": {"loan", "loans"},
     "training": {"training", "trainings", "courses", "course"},
-    "internship": {"internship", "internships"},
+    "internship": {"internship", "internships", "internhips"},
     "project": {"project", "projects"},
 }
 
+PROVINCES = {"punjab": "Punjab", "sindh": "Sindh", "kpk": "KPK", "kp": "KPK", "khyber pakhtunkhwa": "KPK", "balochistan": "Balochistan", "islamabad": "Islamabad"}
+LOCATION_TERMS = {"lahore", "karachi", "islamabad", "rawalpindi", "peshawar", "quetta", "multan", "faisalabad", "hyderabad", "sialkot", "gujranwala", "bahawalpur", "sargodha", "abbottabad", "murree"}
+STOPWORDS = {"a", "an", "the", "for", "in", "on", "at", "to", "of", "and", "or", "me", "my", "is", "are", "show", "give", "list", "find", "get", "available", "latest", "new", "please", "any", "some", "with", "from", "near", "opportunities", "opportunity", "openings", "opening", "there", "can", "you", "want", "need", "looking"}
+
+
+def _words(message: str) -> list[str]:
+    return re.sub(r"[^a-z0-9\s]", " ", normalize_query(message)).lower().split()
+
 
 def _detect_category(message: str) -> Optional[str]:
-    words = set(re.sub(r"[^a-z\s]", " ", message.lower()).split())
+    words = set(_words(message))
     for category, aliases in CATEGORY_ALIASES.items():
         if words & aliases:
             return category
     return None
 
 
+def _extract_limit(message: str, default: int) -> int:
+    match = re.search(r"\b(\d{1,2})\s+(?:latest\s+)?(?:jobs?|scholarships?|loans?|trainings?|courses?|internships?|projects?|opportunities?)\b", normalize_query(message))
+    if not match:
+        match = re.search(r"\b(\d{1,2})\b", normalize_query(message))
+    return max(1, min(int(match.group(1)), 15)) if match else default
+
+
+def _extract_filters(message: str) -> Tuple[Optional[str], Optional[str], list[str], bool]:
+    text = normalize_query(message)
+    words = _words(text)
+    province = next((value for key, value in PROVINCES.items() if key in text), None)
+    location = next((value.title() for value in LOCATION_TERMS if value in words), None)
+    category = _detect_category(text)
+    latest = bool(re.search(r"\b(latest|newest|recent|new)\b", text))
+    category_words = set().union(*CATEGORY_ALIASES.values())
+    filter_words = set(PROVINCES) | LOCATION_TERMS | category_words | STOPWORDS
+    keywords = [word for word in words if word not in filter_words and len(word) > 2 and not word.isdigit()]
+    return province, location, keywords, latest
+
+
 def _db_record(row: Dict[str, Any]) -> Dict[str, Any]:
     extra = row.get("extra_data") or {}
-    return {
-        "opportunity_id": row.get("id"),
-        "title": row.get("title") or extra.get("title") or "",
-        "category": row.get("category") or "",
-        "province": extra.get("province") or "",
-        "location": extra.get("location") or "",
-        "organization": extra.get("organization") or extra.get("department") or extra.get("company") or "",
-        "description": row.get("description") or extra.get("description") or "",
-        "eligibility": extra.get("eligibility") or "",
-        "closing_date": extra.get("closing_date") or extra.get("deadline") or "",
-        "apply_link": extra.get("apply_link") or extra.get("link") or extra.get("url") or "",
-        "source": extra.get("source") or "",
-        "score": 0.0,
-    }
+    return {"opportunity_id": row.get("id"), "title": row.get("title") or extra.get("title") or "", "category": row.get("category") or "", "province": extra.get("province") or "", "location": extra.get("location") or "", "organization": extra.get("organization") or extra.get("department") or extra.get("company") or "", "description": row.get("description") or extra.get("description") or "", "eligibility": extra.get("eligibility") or "", "closing_date": extra.get("closing_date") or extra.get("deadline") or "", "apply_link": extra.get("apply_link") or extra.get("link") or extra.get("url") or "", "source": extra.get("source") or "", "score": 0.0}
+
+
+def _date_value(value: Any) -> Optional[date]:
+    if not value:
+        return None
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(text[:10], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _is_active(item: Dict[str, Any]) -> bool:
+    deadline = _date_value(item.get("closing_date"))
+    return deadline is None or deadline >= date.today()
+
+
+def _matches_keywords(item: Dict[str, Any], keywords: list[str]) -> bool:
+    if not keywords:
+        return True
+    searchable = " ".join(str(item.get(key, "")) for key in ("title", "description", "organization", "eligibility", "location", "province")).lower()
+    return all(keyword.lower() in searchable for keyword in keywords)
+
+
+def _matches_location(item: Dict[str, Any], province: Optional[str], location: Optional[str]) -> bool:
+    if province:
+        searchable = f"{item.get('province', '')} {item.get('location', '')}".lower()
+        if province.lower() not in searchable:
+            return False
+    if location:
+        searchable = f"{item.get('location', '')} {item.get('province', '')}".lower()
+        if location.lower() not in searchable:
+            return False
+    return True
+
+
+def _fetch_structured(category: str, limit: int, province: Optional[str], location: Optional[str], keywords: list[str], latest: bool) -> list[Dict[str, Any]]:
+    response = get_db().table("opportunities").select("*").eq("category", category).limit(200).execute()
+    results = [_db_record(row) for row in (response.data or []) if row.get("id") is not None]
+    results = [item for item in results if _matches_location(item, province, location) and _matches_keywords(item, keywords) and _is_active(item)]
+    if latest:
+        # Smaller closing dates are nearer to expiry; when a source does not provide a date it is placed last.
+        results.sort(key=lambda item: _date_value(item.get("closing_date")) or date.max)
+    return results[:limit]
 
 
 def _clean_database_answer(results: list[Dict[str, Any]], category: str) -> str:
-    """Build a deterministic, clean answer directly from database records."""
-    label = category.capitalize() + ("ies" if category == "opportunit" else "s")
-    if category == "job":
-        label = "Jobs"
-    elif category == "scholarship":
-        label = "Scholarships"
-    elif category == "loan":
-        label = "Loans"
-    elif category == "training":
-        label = "Training Opportunities"
-    elif category == "internship":
-        label = "Internships"
-    elif category == "project":
-        label = "Projects"
-
-    lines = [f"### {label}", ""]
+    labels = {"job": "Jobs", "scholarship": "Scholarships", "loan": "Loans", "training": "Training Opportunities", "internship": "Internships", "project": "Projects"}
+    lines = [f"### {labels.get(category, 'Opportunities')}", ""]
     for index, item in enumerate(results, start=1):
-        title = item.get("title") or "Untitled opportunity"
-        lines.append(f"**{index}. {title}**")
-
-        organization = item.get("organization")
-        if organization:
-            lines.append(f"Organization: {organization}")
-
-        location = item.get("location")
-        if location:
-            lines.append(f"Location: {location}")
-
-        province = item.get("province")
-        if province:
-            lines.append(f"Province: {province}")
-
-        deadline = item.get("closing_date")
-        if deadline:
-            lines.append(f"Deadline: {deadline}")
-
-        apply_link = item.get("apply_link")
-        if apply_link:
-            lines.append(f"[Apply Now]({apply_link})")
-
+        lines.append(f"**{index}. {item.get('title') or 'Untitled opportunity'}**")
+        for label, key in (("Organization", "organization"), ("Location", "location"), ("Province", "province"), ("Deadline", "closing_date")):
+            if item.get(key):
+                lines.append(f"{label}: {item[key]}")
+        if item.get("apply_link"):
+            lines.append(f"[Apply Now]({item['apply_link']})")
         lines.append("")
-
     return "\n".join(lines).strip()
 
 
@@ -101,60 +131,24 @@ class ChatRequest(BaseModel):
 @router.post("/chat")
 def chat(request: ChatRequest) -> Dict[str, Any]:
     try:
-        # IMPORTANT: this check is completely local. It runs before category
-        # detection, Supabase, Gemini embeddings, Qdrant, and Gemini chat.
         is_relevant, _reason = check_query_relevance(request.message)
         if not is_relevant:
-            return {
-                "success": True,
-                "answer": (
-                    "I can help with jobs, internships, scholarships, loans, "
-                    "training, and projects listed on Citizen Portal. "
-                    "Please ask a question related to these opportunities."
-                ),
-                "sources": [],
-                "relatedOpportunities": [],
-            }
+            return {"success": True, "answer": "I can help with jobs, internships, scholarships, loans, training, and projects listed on Citizen Portal. Please ask a question related to these opportunities.", "sources": [], "relatedOpportunities": []}
 
-        category = _detect_category(request.message)
+        query = normalize_query(request.message)
+        category = _detect_category(query)
+        province, location, keywords, latest = _extract_filters(query)
+        requested_limit = _extract_limit(query, request.limit)
 
-        # Direct category requests use Supabase as the source of truth.
         if category:
-            response = (
-                get_db()
-                .table("opportunities")
-                .select("*")
-                .eq("category", category)
-                .limit(request.limit)
-                .execute()
-            )
-            results = [_db_record(row) for row in (response.data or []) if row.get("id") is not None]
+            results = _fetch_structured(category, requested_limit, province, location, keywords, latest)
         else:
-            # For semantic questions, retrieve first. retrieve() applies the
-            # Qdrant similarity threshold before anything reaches Gemini.
-            results = retrieve(request.message, limit=request.limit)
+            results = retrieve(query, limit=requested_limit)
 
         if not results:
-            return {
-                "success": True,
-                "answer": "I could not find verified matching opportunities in the Citizen Portal database.",
-                "sources": [],
-                "relatedOpportunities": [],
-            }
+            return {"success": True, "answer": "I could not find any active, matching opportunities in the Citizen Portal database.", "sources": [], "relatedOpportunities": []}
 
-        # For direct database/category requests, do not ask Gemini to rewrite
-        # the records. This keeps titles, deadlines and Apply links exact.
-        if category:
-            answer = _clean_database_answer(results, category)
-        else:
-            context = build_context(results)
-            answer = generate_answer(request.message, context)
-
-        return {
-            "success": True,
-            "answer": answer,
-            "sources": [],
-            "relatedOpportunities": [],
-        }
+        answer = _clean_database_answer(results, category) if category else generate_answer(query, build_context(results))
+        return {"success": True, "answer": answer, "sources": [], "relatedOpportunities": []}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Chatbot service error: {exc}")
