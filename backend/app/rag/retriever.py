@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, List
 
 from app.rag.gemini import embed_text
@@ -6,7 +7,12 @@ from app.rag.qdrant import search_opportunities
 
 def retrieve(question: str, limit: int = 8) -> List[Dict[str, Any]]:
     vector = embed_text(question)
-    return search_opportunities(vector, limit=limit)
+    results = search_opportunities(vector, limit=limit)
+
+    # Similarity is checked after the embedding call. This prevents weakly
+    # related opportunities from reaching Gemini's answer-generation step.
+    threshold = float(os.getenv("RAG_SCORE_THRESHOLD", "0.45"))
+    return [item for item in results if float(item.get("score", 0.0)) >= threshold]
 
 
 def build_context(results: List[Dict[str, Any]]) -> str:
