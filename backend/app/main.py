@@ -23,18 +23,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# The frontend is a public Vercel application and the FastAPI API is public.
+# No cookies/auth credentials are sent from the browser to these endpoints,
+# so wildcard CORS is appropriate here and also covers Vercel preview URLs.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-    # Allows Vercel preview and production deployments without hard-coding
-    # every generated *.vercel.app URL.
-    allow_origin_regex=r"https://[a-zA-Z0-9-]+\.vercel\.app$",
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
