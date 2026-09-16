@@ -5,8 +5,12 @@ from typing import Tuple
 QUERY_NORMALIZATIONS = {
     "schoolarship": "scholarship",
     "schoolarships": "scholarships",
+    "scholarsship": "scholarship",
+    "scholarsships": "scholarships",
     "internship": "internship",
     "internhips": "internships",
+    "internhsip": "internship",
+    "internhsips": "internships",
     "scholorship": "scholarship",
     "scholorships": "scholarships",
 }
@@ -38,6 +42,7 @@ TARGET_TERMS = {
 INTENT_TERMS = {
     "find", "show", "give", "list", "available", "latest", "new", "search", "looking",
     "need", "want", "help", "which", "what", "where", "how", "can", "any", "get",
+    "tell", "know", "let", "about", "would", "could", "should", "please", "like",
 }
 
 
