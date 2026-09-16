@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, XCircle, RefreshCw, Eye, Inbox } from 'lucide-react';
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 export default function AdminSubmissionQueue({ username, password, lang }) {
   const [items, setItems] = useState([]);
