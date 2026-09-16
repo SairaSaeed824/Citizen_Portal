@@ -23,7 +23,7 @@ CATEGORY_ALIASES = {
 
 PROVINCES = {"punjab": "Punjab", "sindh": "Sindh", "kpk": "KPK", "kp": "KPK", "khyber pakhtunkhwa": "KPK", "balochistan": "Balochistan", "islamabad": "Islamabad"}
 LOCATION_TERMS = {"lahore", "karachi", "islamabad", "rawalpindi", "peshawar", "quetta", "multan", "faisalabad", "hyderabad", "sialkot", "gujranwala", "bahawalpur", "sargodha", "abbottabad", "murree"}
-STOPWORDS = {"a", "an", "the", "for", "in", "on", "at", "to", "of", "and", "or", "me", "my", "is", "are", "show", "give", "list", "find", "get", "available", "latest", "new", "please", "any", "some", "with", "from", "near", "opportunities", "opportunity", "openings", "opening", "there", "can", "you", "want", "need", "looking", "tell", "about", "what", "which", "how", "information", "info", "explain", "explanation"}
+STOPWORDS = {"a", "an", "the", "for", "in", "on", "at", "to", "of", "and", "or", "me", "my", "is", "are", "show", "give", "list", "find", "get", "available", "latest", "new", "please", "any", "some", "with", "from", "near", "opportunities", "opportunity", "openings", "opening", "there", "can", "you", "want", "need", "looking", "tell", "about", "what", "which", "how", "information", "info", "explain", "explanation", "let", "know", "would", "could", "please", "me", "i", "id", "like", "provide", "provide", "details", "detail", "regarding", "regard", "interested", "interest", "showing", "tell", "more"}
 
 
 def _words(message: str) -> list[str]:
@@ -110,7 +110,8 @@ def _fetch_structured(category: str, limit: int, province: Optional[str], locati
 
 def _clean_database_answer(results: list[Dict[str, Any]], category: str) -> str:
     labels = {"job": "Jobs", "scholarship": "Scholarships", "loan": "Loans", "training": "Training Opportunities", "internship": "Internships", "project": "Projects"}
-    lines = [f"### {labels.get(category, 'Opportunities')}", ""]
+    intro = {"job": "Here are the active job opportunities available on Citizen Portal:", "scholarship": "Here are the active scholarship opportunities available on Citizen Portal:", "loan": "Here are the active loan opportunities available on Citizen Portal:", "training": "Here are the active training opportunities available on Citizen Portal:", "internship": "Here are the active internship opportunities available on Citizen Portal:", "project": "Here are the active project opportunities available on Citizen Portal:"}
+    lines = [intro.get(category, "Here are the available opportunities on Citizen Portal:"), "", f"### {labels.get(category, 'Opportunities')}", ""]
     for index, item in enumerate(results, start=1):
         lines.append(f"**{index}. {item.get('title') or 'Untitled opportunity'}**")
         for label, key in (("Organization", "organization"), ("Location", "location"), ("Province", "province"), ("Deadline", "closing_date")):
