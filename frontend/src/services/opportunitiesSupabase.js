@@ -88,21 +88,33 @@ export async function submitOpportunitySupabase(payload) {
 export async function getProvincesSupabase() {
   const standardProvinces = ['Punjab', 'Sindh', 'Khyber Pakhtunkhwa', 'Balochistan', 'Islamabad Capital Territory', 'Gilgit-Baltistan', 'Azad Jammu and Kashmir'];
   let values = [];
-  try {
-    const { data, error } = await supabase.from('opportunities').select('province, extra_data');
-    if (!error && Array.isArray(data)) values = data.map(getProvinceValue).filter(Boolean);
-  } catch (error) { console.warn('Could not load provinces directly from Supabase:', error); }
+
+  // Do not query the optional `province` column directly because some
+  // production Supabase schemas store province only inside extra_data.
+  // FastAPI already normalizes opportunities, so use it as the primary source.
   try {
     const response = await fetch(`${API_BASE_URL}/api/opportunities?limit=100`);
     if (response.ok) {
       const result = await response.json();
-      values = [...values, ...(result.data || []).map(getProvinceValue).filter(Boolean)];
+      values = (result.data || []).map(getProvinceValue).filter(Boolean);
     }
-  } catch (error) { console.warn('Could not load provinces from API:', error); }
-  const unique = Array.from(new Map([...standardProvinces, ...values].map((value) => String(value).trim()).filter(Boolean).map((value) => [normalize(value), value])).values());
+  } catch (error) {
+    console.warn('Could not load provinces from API:', error);
+  }
+
+  const unique = Array.from(
+    new Map(
+      [...standardProvinces, ...values]
+        .map((value) => String(value).trim())
+        .filter(Boolean)
+        .map((value) => [normalize(value), value])
+    ).values()
+  );
+
   const order = standardProvinces.map(normalize);
   return unique.sort((a, b) => {
-    const ai = order.indexOf(normalize(a)); const bi = order.indexOf(normalize(b));
+    const ai = order.indexOf(normalize(a));
+    const bi = order.indexOf(normalize(b));
     if (ai !== -1 && bi !== -1) return ai - bi;
     if (ai !== -1) return -1;
     if (bi !== -1) return 1;
