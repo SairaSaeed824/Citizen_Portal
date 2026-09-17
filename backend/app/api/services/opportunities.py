@@ -60,6 +60,27 @@ def get_opportunity_by_id(opportunity_id: int) -> Dict[str, Any] | None:
     return result.data[0] if result.data else None
 
 
+def get_category_stats() -> List[Dict[str, Any]]:
+    """Return opportunity counts by supported category from the backend database."""
+    db = get_db()
+    data = db.table("opportunities").select("category").execute().data or []
+    counts = {"job": 0, "scholarship": 0, "loan": 0, "training": 0, "internship": 0, "project": 0}
+    for item in data:
+        category = str(item.get("category") or "").strip().lower()
+        if category in counts:
+            counts[category] += 1
+
+    return [
+        {"key": "all", "name": "All Opportunities", "nameUrdu": "تمام مواقع", "count": len(data), "icon": "LayoutGrid"},
+        {"key": "job", "name": "Jobs", "nameUrdu": "ملازمتیں", "count": counts["job"], "icon": "Briefcase"},
+        {"key": "scholarship", "name": "Scholarships", "nameUrdu": "وظائف", "count": counts["scholarship"], "icon": "GraduationCap"},
+        {"key": "loan", "name": "Loans", "nameUrdu": "قرضے", "count": counts["loan"], "icon": "Landmark"},
+        {"key": "training", "name": "Training", "nameUrdu": "تربیت", "count": counts["training"], "icon": "Sparkles"},
+        {"key": "internship", "name": "Internships", "nameUrdu": "انٹرن شپس", "count": counts["internship"], "icon": "Building2"},
+        {"key": "project", "name": "Projects", "nameUrdu": "پروجیکٹس", "count": counts["project"], "icon": "FolderKanban"},
+    ]
+
+
 def search_opportunities(query: str, category="all", province="all", location="", organization="", deadline="all", sort_by="default") -> List[Dict[str, Any]]:
     """Search title/name and then apply the same advanced directory filters."""
     data = get_opportunities(category, province, location, organization, deadline, sort_by)
