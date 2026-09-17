@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class OpportunitySubmission(BaseModel):
@@ -35,7 +35,5 @@ class OpportunitySubmission(BaseModel):
 
 
 class SubmissionReview(BaseModel):
-    admin_username: str
-    admin_password: str
     action: str
     edited_data: Optional[Dict[str, Any]] = None
