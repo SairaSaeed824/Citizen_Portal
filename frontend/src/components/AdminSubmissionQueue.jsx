@@ -3,19 +3,31 @@ import { CheckCircle2, XCircle, RefreshCw, Eye, Inbox } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
-export default function AdminSubmissionQueue({ username, password, lang }) {
+export default function AdminSubmissionQueue({ username, lang }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
 
+  const getAuthHeaders = () => {
+    const token = sessionStorage.getItem('admin_access_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const load = async () => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`${API_BASE_URL}/api/submitted-opportunities/pending`);
+      const response = await fetch(`${API_BASE_URL}/api/submitted-opportunities/pending`, {
+        headers: getAuthHeaders(),
+      });
       const result = await response.json();
+      if (response.status === 401) {
+        sessionStorage.removeItem('admin_access_token');
+        sessionStorage.removeItem('admin_username');
+        throw new Error('Admin session expired. Please log in again.');
+      }
       if (!response.ok) throw new Error(result.detail || 'Could not load pending submissions');
       setItems(result.data || []);
     } catch (e) {
@@ -33,14 +45,15 @@ export default function AdminSubmissionQueue({ username, password, lang }) {
     try {
       const response = await fetch(`${API_BASE_URL}/api/submitted-opportunities/${item.id}/review`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          admin_username: username,
-          admin_password: password,
-          action,
-        }),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ action }),
       });
       const result = await response.json();
+      if (response.status === 401) {
+        sessionStorage.removeItem('admin_access_token');
+        sessionStorage.removeItem('admin_username');
+        throw new Error('Admin session expired. Please log in again.');
+      }
       if (!response.ok) throw new Error(result.detail || 'Review failed');
       setItems((current) => current.filter((x) => x.id !== item.id));
       setSelected(null);
