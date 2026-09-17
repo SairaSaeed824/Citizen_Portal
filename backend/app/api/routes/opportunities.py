@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException
-from app.api.services.opportunities import get_opportunities, get_opportunity_by_id, search_opportunities
+from app.api.services.opportunities import get_opportunities, get_opportunity_by_id, get_category_stats, search_opportunities
 from app.models.opportunity import OpportunityResponse
 
 router = APIRouter(prefix="/api/opportunities", tags=["Opportunities"])
@@ -35,9 +35,7 @@ def fetch_opportunities(
     limit: int = Query(50, ge=1, le=100),
 ):
     category, deadline, sort_by = validate_filters(category, deadline, sort_by)
-    all_data = get_opportunities(
-        category, province, location, organization, deadline, sort_by, keyword
-    )
+    all_data = get_opportunities(category, province, location, organization, deadline, sort_by, keyword)
     total = len(all_data)
     start = (page - 1) * limit
     data = all_data[start:start + limit]
@@ -82,6 +80,11 @@ def search_opportunities_route(
         "has_next": start + limit < total,
         "data": data,
     }
+
+
+@router.get("/stats")
+def fetch_category_stats():
+    return {"success": True, "data": get_category_stats()}
 
 
 @router.get("/{opportunity_id}")
