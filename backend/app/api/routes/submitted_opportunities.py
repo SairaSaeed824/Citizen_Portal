@@ -1,8 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.database import get_db
 from app.models.submitted_opportunity import OpportunitySubmission, SubmissionReview
 from app.api.services.submissions import create_submission, list_pending_submissions, review_submission
+from app.core.admin_auth import get_current_admin
 
 router = APIRouter(prefix="/api/submitted-opportunities", tags=["Submitted Opportunities"])
 
@@ -21,7 +21,7 @@ def submit_opportunity(payload: OpportunitySubmission):
 
 
 @router.get("/pending")
-def pending_opportunities():
+def pending_opportunities(_: dict = Depends(get_current_admin)):
     try:
         data = list_pending_submissions()
         return {"success": True, "count": len(data), "data": data}
@@ -30,16 +30,14 @@ def pending_opportunities():
 
 
 @router.patch("/{submission_id}/review")
-def review_opportunity(submission_id: int, payload: SubmissionReview):
+def review_opportunity(
+    submission_id: int,
+    payload: SubmissionReview,
+    _: dict = Depends(get_current_admin),
+):
     try:
-        db = get_db()
-        admin = db.table("admins").select("username,password").eq("username", payload.admin_username.strip()).maybe_single().execute().data
-        if not admin or str(admin.get("password", "")).strip() != payload.admin_password.strip():
-            raise HTTPException(status_code=401, detail="Invalid admin credentials")
         data = review_submission(submission_id, payload.action, payload.edited_data)
         return {"success": True, "data": data}
-    except HTTPException:
-        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
