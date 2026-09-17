@@ -1,18 +1,16 @@
 import os
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.database import get_db
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "").strip()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -25,26 +23,48 @@ def _require_secret_key() -> str:
     return SECRET_KEY
 
 
+def _is_bcrypt_hash(value: str) -> bool:
+    return value.startswith(("$2a$", "$2b$", "$2y$"))
+
+
 def _verify_password(password: str, stored_password: str) -> bool:
-    """Support existing plaintext admin rows once, then upgrade them to bcrypt."""
+    """Verify bcrypt passwords or support an existing plaintext admin row once."""
     if not stored_password:
         return False
 
-    if stored_password.startswith(("$2a$", "$2b$", "$2y$")):
+    if _is_bcrypt_hash(stored_password):
         try:
-            return pwd_context.verify(password, stored_password)
+            return bcrypt.checkpw(
+                password.encode("utf-8"),
+                stored_password.encode("utf-8"),
+            )
         except (ValueError, TypeError):
             return False
 
     return password == stored_password
 
 
+def _hash_password(password: str) -> str:
+    """Create a bcrypt hash without passlib."""
+    try:
+        return bcrypt.hashpw(
+            password.encode("utf-8"),
+            bcrypt.gensalt(),
+        ).decode("utf-8")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin password must be 72 bytes or fewer.",
+        ) from exc
+
+
 def authenticate_admin(username: str, password: str) -> dict:
+    username = username.strip()
     db = get_db()
     admin = (
         db.table("admins")
         .select("username,password")
-        .eq("username", username.strip())
+        .eq("username", username)
         .maybe_single()
         .execute()
         .data
@@ -58,12 +78,12 @@ def authenticate_admin(username: str, password: str) -> dict:
 
     # Upgrade an old plaintext password to bcrypt after the first successful login.
     stored_password = str(admin.get("password", ""))
-    if not stored_password.startswith(("$2a$", "$2b$", "$2y$")):
-        db.table("admins").update({"password": pwd_context.hash(password)}).eq(
-            "username", username.strip()
+    if not _is_bcrypt_hash(stored_password):
+        db.table("admins").update({"password": _hash_password(password)}).eq(
+            "username", username
         ).execute()
 
-    return {"username": username.strip()}
+    return {"username": username}
 
 
 def create_access_token(username: str) -> str:
