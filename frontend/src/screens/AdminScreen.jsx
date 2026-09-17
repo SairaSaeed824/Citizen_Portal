@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { supabase } from '../services/supabaseClient';
 import { ShieldCheck, Lock, User, ArrowLeft, KeyRound, AlertCircle, Eye, EyeOff, RefreshCw, LogOut } from 'lucide-react';
 import AdminSubmissionQueue from '../components/AdminSubmissionQueue';
 
@@ -18,13 +17,8 @@ export default function AdminScreen({ setCurrentScreen, t, lang }) {
     if (username.trim().toLowerCase() === 'admin' && password === 'admin123') {
       setIsLoggedIn(true); setIsLoading(false); return;
     }
-    try {
-      const { data, error } = await supabase.from('admins').select('*').eq('username', username.trim()).maybeSingle();
-      if (error || !data || String(data.password).trim() !== password.trim()) throw new Error('Invalid credentials');
-      setIsLoggedIn(true);
-    } catch (e) {
-      setErrorMsg(isUrdu ? 'غلط یوزر نام یا پاس ورڈ۔' : 'Invalid username or password.');
-    } finally { setIsLoading(false); }
+    setErrorMsg(isUrdu ? 'غلط یوزر نام یا پاس ورڈ۔' : 'Invalid username or password.');
+    setIsLoading(false);
   };
 
   const handleLogout = () => { setIsLoggedIn(false); setUsername(''); setPassword(''); };
