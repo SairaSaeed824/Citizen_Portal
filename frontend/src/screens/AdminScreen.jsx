@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { ShieldCheck, Lock, User, ArrowLeft, KeyRound, AlertCircle, Eye, EyeOff, RefreshCw, LogOut } from 'lucide-react';
 import AdminSubmissionQueue from '../components/AdminSubmissionQueue';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+
 export default function AdminScreen({ setCurrentScreen, t, lang }) {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [username, setUsername] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(Boolean(sessionStorage.getItem('admin_access_token')));
+  const [username, setUsername] = useState(sessionStorage.getItem('admin_username') || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -13,15 +15,31 @@ export default function AdminScreen({ setCurrentScreen, t, lang }) {
 
   const handleLogin = async (e) => {
     e.preventDefault(); setErrorMsg(''); setIsLoading(true);
-    // Backward-compatible local admin access used by the existing portal.
-    if (username.trim().toLowerCase() === 'admin' && password === 'admin123') {
-      setIsLoggedIn(true); setIsLoading(false); return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || 'Invalid username or password.');
+      sessionStorage.setItem('admin_access_token', result.access_token);
+      sessionStorage.setItem('admin_username', result.admin?.username || username.trim());
+      setUsername(result.admin?.username || username.trim());
+      setPassword('');
+      setIsLoggedIn(true);
+    } catch (e) {
+      setErrorMsg(e.message);
+    } finally {
+      setIsLoading(false);
     }
-    setErrorMsg(isUrdu ? 'غلط یوزر نام یا پاس ورڈ۔' : 'Invalid username or password.');
-    setIsLoading(false);
   };
 
-  const handleLogout = () => { setIsLoggedIn(false); setUsername(''); setPassword(''); };
+  const handleLogout = () => {
+    sessionStorage.removeItem('admin_access_token');
+    sessionStorage.removeItem('admin_username');
+    setIsLoggedIn(false); setUsername(''); setPassword('');
+  };
 
   return (
     <div className="py-8 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto">
@@ -39,7 +57,7 @@ export default function AdminScreen({ setCurrentScreen, t, lang }) {
       ) : (
         <div className="space-y-6">
           <div className="bg-[#00401A] rounded-3xl p-6 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="flex items-center gap-2"><ShieldCheck className="w-6 h-6"/><h2 className="text-xl font-black">Admin Verification Center</h2></div><p className="text-xs text-emerald-100 mt-1">Review, approve or reject citizen-submitted opportunities.</p></div><button onClick={handleLogout} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 border border-white/20 text-xs font-bold"><LogOut className="w-4 h-4"/>Sign Out</button></div>
-          <AdminSubmissionQueue username={username.trim()} password={password} lang={lang} />
+          <AdminSubmissionQueue username={username.trim()} lang={lang} />
         </div>
       )}
     </div>
